@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { DebiCheckMandate, PaymentMethod, PaymentTransaction } from "@xplatform/shared-types";
-import { T, IC, Card, CH, Tab, TRow, SectionTitle, Badge, Btn, Spin, fmtN, fmtR } from "@xplatform/ui-kit";
+import { T, IC, Card, CH, Tab, TRow, SectionTitle, Badge, Btn, LoadingState, ErrorState, fmtN, fmtR } from "@xplatform/ui-kit";
 import { api } from "../api";
 
 export function Payments() {
@@ -9,8 +9,11 @@ export function Payments() {
   const [recon, setRecon] = useState<PaymentTransaction[]>([]);
   const [mandates, setMandates] = useState<DebiCheckMandate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true);
+    setError(null);
     Promise.all([
       api.get<PaymentMethod[]>("/payments/methods"),
       api.get<PaymentTransaction[]>("/payments/recon"),
@@ -21,21 +24,19 @@ export function Payments() {
         setRecon(r);
         setMandates(d);
       })
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load payments data"))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(load, []);
 
   const resolve = async (ref: string) => {
     await api.post(`/payments/recon/${ref}/resolve`);
     setRecon((prev) => prev.map((r) => (r.ref === ref ? { ...r, status: "matched", erpStatus: "posted" } : r)));
   };
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, color: T.g100 }}>
-        <Spin /> Loading payments…
-      </div>
-    );
-  }
+  if (loading) return <LoadingState label="Loading payments…" />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
     <div>

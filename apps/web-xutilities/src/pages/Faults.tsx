@@ -1,13 +1,22 @@
 import { useEffect, useState } from "react";
 import type { MeterFault } from "@xplatform/shared-types";
-import { T, IC, Card, CH, SectionTitle, Badge, Btn, Spin } from "@xplatform/ui-kit";
+import { T, IC, Card, CH, SectionTitle, Badge, Btn, LoadingState, ErrorState } from "@xplatform/ui-kit";
 import { api } from "../api";
 
 export function Faults() {
   const [faults, setFaults] = useState<MeterFault[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const load = () => api.get<MeterFault[]>("/metering/faults").then(setFaults).finally(() => setLoading(false));
+  const load = () => {
+    setLoading(true);
+    setError(null);
+    return api
+      .get<MeterFault[]>("/metering/faults")
+      .then(setFaults)
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load faults"))
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     load();
@@ -23,13 +32,8 @@ export function Faults() {
     setFaults((prev) => prev.map((f) => (f.id === id ? { ...f, status: "resolved" } : f)));
   };
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, color: T.g100 }}>
-        <Spin /> Loading faults…
-      </div>
-    );
-  }
+  if (loading) return <LoadingState label="Loading faults…" />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
     <div>

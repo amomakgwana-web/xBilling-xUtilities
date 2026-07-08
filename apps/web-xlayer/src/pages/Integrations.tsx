@@ -1,29 +1,30 @@
 import { useEffect, useState } from "react";
 import type { ComplianceScore, Integration } from "@xplatform/shared-types";
-import { T, IC, Card, CH, SectionTitle, Badge, Spin } from "@xplatform/ui-kit";
+import { T, IC, Card, CH, SectionTitle, Badge, LoadingState, ErrorState } from "@xplatform/ui-kit";
 import { api } from "../api";
 
 export function Integrations() {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [score, setScore] = useState<ComplianceScore | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true);
+    setError(null);
     Promise.all([api.get<Integration[]>("/compliance/integrations"), api.get<ComplianceScore>("/compliance/score")])
       .then(([i, s]) => {
         setIntegrations(i);
         setScore(s);
       })
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load integrations"))
       .finally(() => setLoading(false));
-  }, []);
+  };
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, color: T.g100 }}>
-        <Spin /> Loading integrations…
-      </div>
-    );
-  }
+  useEffect(load, []);
+
+  if (loading) return <LoadingState label="Loading integrations…" />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
     <div>

@@ -18,6 +18,56 @@ export function Spin({ s = 14, c = T.brand }: { s?: number; c?: string }) {
   );
 }
 
+export function LoadingState({ label = "Loading…" }: { label?: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, color: T.g100, padding: "20px 0" }}>
+      <Spin /> {label}
+    </div>
+  );
+}
+
+/** Shown in place of a page/section when its data fetch fails — e.g. the API
+ * is unreachable in a deployed environment. Always gives the visitor a way
+ * forward instead of a silent, permanent spinner. */
+export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <div
+      style={{
+        background: T.redBg,
+        border: `1px solid ${T.red}40`,
+        borderRadius: 10,
+        padding: "16px 18px",
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+      }}
+    >
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.redT, marginBottom: 4 }}>Couldn't load this page</div>
+        <div style={{ fontSize: 12, color: T.white3 }}>{message}</div>
+      </div>
+      {onRetry && (
+        <button
+          onClick={onRetry}
+          style={{
+            background: "transparent",
+            border: `1px solid ${T.red}60`,
+            color: T.redT,
+            borderRadius: 7,
+            padding: "7px 14px",
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
 const BADGE_MAP: Record<string, [string, string, string, string]> = {
   live: [T.greenBg, T.greenT, T.green, "Live"],
   matched: [T.greenBg, T.greenT, T.green, "Matched"],

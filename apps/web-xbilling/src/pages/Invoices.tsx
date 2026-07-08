@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Invoice } from "@xplatform/shared-types";
-import { T, IC, Card, CH, SectionTitle, Badge, Spin, fmtR } from "@xplatform/ui-kit";
+import { T, IC, Card, CH, SectionTitle, Badge, LoadingState, ErrorState, fmtR } from "@xplatform/ui-kit";
 import { api } from "../api";
 import { useAccount } from "../AccountContext";
 
@@ -8,23 +8,23 @@ export function Invoices() {
   const { accountNumber } = useAccount();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () => {
     setLoading(true);
+    setError(null);
     api
       .get<Invoice[]>(`/billing/invoices?accountNumber=${accountNumber}`)
       .then(setInvoices)
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load invoices"))
       .finally(() => setLoading(false));
-  }, [accountNumber]);
+  };
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, color: T.g100 }}>
-        <Spin /> Loading invoices…
-      </div>
-    );
-  }
+  useEffect(load, [accountNumber]);
+
+  if (loading) return <LoadingState label="Loading invoices…" />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
     <div>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Meter } from "@xplatform/shared-types";
-import { T, IC, Card, CH, TRow, SectionTitle, Badge, Btn, Spin, fmtN } from "@xplatform/ui-kit";
+import { T, IC, Card, CH, TRow, SectionTitle, Badge, Btn, LoadingState, ErrorState, fmtN } from "@xplatform/ui-kit";
 import { api } from "../api";
 
 const TYPE_LABEL: Record<Meter["type"], string> = {
@@ -12,13 +12,22 @@ const TYPE_LABEL: Record<Meter["type"], string> = {
 export function Meters() {
   const [meters, setMeters] = useState<Meter[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [vendingFor, setVendingFor] = useState<string | null>(null);
   const [vendAmount, setVendAmount] = useState("100");
   const [tokenResult, setTokenResult] = useState<{ serial: string; token: string; units: number } | null>(null);
 
-  useEffect(() => {
-    api.get<Meter[]>("/metering/meters").then(setMeters).finally(() => setLoading(false));
-  }, []);
+  const load = () => {
+    setLoading(true);
+    setError(null);
+    api
+      .get<Meter[]>("/metering/meters")
+      .then(setMeters)
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load meters"))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(load, []);
 
   const vendToken = async (serial: string) => {
     const result = await api.post<{ token: string; units: number; ref: string }>("/metering/meters/vend-token", {
@@ -29,13 +38,8 @@ export function Meters() {
     setVendingFor(null);
   };
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, color: T.g100 }}>
-        <Spin /> Loading meters…
-      </div>
-    );
-  }
+  if (loading) return <LoadingState label="Loading meters…" />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
     <div>

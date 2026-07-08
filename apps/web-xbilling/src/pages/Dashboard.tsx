@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Account, Invoice } from "@xplatform/shared-types";
-import { T, IC, Card, CH, KpiCard, SectionTitle, Badge, Btn, Spin, fmtR } from "@xplatform/ui-kit";
+import { T, IC, Card, CH, KpiCard, SectionTitle, Badge, Btn, LoadingState, ErrorState, fmtR } from "@xplatform/ui-kit";
 import { api } from "../api";
 import { useAccount } from "../AccountContext";
 
@@ -11,9 +11,11 @@ export function Dashboard() {
   const [account, setAccount] = useState<Account | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () => {
     setLoading(true);
+    setError(null);
     Promise.all([
       api.get<Account>(`/billing/accounts/${accountNumber}`),
       api.get<Invoice[]>(`/billing/invoices?accountNumber=${accountNumber}`),
@@ -22,16 +24,14 @@ export function Dashboard() {
         setAccount(acc);
         setInvoices(inv);
       })
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load your account"))
       .finally(() => setLoading(false));
-  }, [accountNumber]);
+  };
 
-  if (loading || !account) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, color: T.g100 }}>
-        <Spin /> Loading your account…
-      </div>
-    );
-  }
+  useEffect(load, [accountNumber]);
+
+  if (loading) return <LoadingState label="Loading your account…" />;
+  if (error || !account) return <ErrorState message={error ?? "Account not found"} onRetry={load} />;
 
   const latestInvoice = invoices[0];
 

@@ -1,17 +1,25 @@
 import { useEffect, useState } from "react";
 import type { Campaign } from "@xplatform/shared-types";
-import { T, IC, Card, CH, SectionTitle, Badge, Btn, Input, Sel, Spin, fmtN } from "@xplatform/ui-kit";
+import { T, IC, Card, CH, SectionTitle, Badge, Btn, Input, Sel, Spin, LoadingState, ErrorState, fmtN } from "@xplatform/ui-kit";
 import { api } from "../api";
 
 export function Campaigns() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [type, setType] = useState<"SMS" | "Email">("SMS");
   const [draft, setDraft] = useState<{ text: string; mocked: boolean } | null>(null);
   const [drafting, setDrafting] = useState(false);
 
-  const load = () => api.get<Campaign[]>("/comms/campaigns").then(setCampaigns).finally(() => setLoading(false));
+  const load = () => {
+    setError(null);
+    return api
+      .get<Campaign[]>("/comms/campaigns")
+      .then(setCampaigns)
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load campaigns"))
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     load();
@@ -33,13 +41,8 @@ export function Campaigns() {
     setDrafting(false);
   };
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, color: T.g100 }}>
-        <Spin /> Loading campaigns…
-      </div>
-    );
-  }
+  if (loading) return <LoadingState label="Loading campaigns…" />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
     <div>

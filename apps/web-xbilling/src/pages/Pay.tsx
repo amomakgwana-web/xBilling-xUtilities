@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Account, PaymentMethod, PaymentTransaction } from "@xplatform/shared-types";
-import { T, IC, Card, CH, SectionTitle, Badge, Btn, Input, Sel, Spin, fmtR } from "@xplatform/ui-kit";
+import { T, IC, Card, CH, SectionTitle, Badge, Btn, Input, Sel, Spin, LoadingState, ErrorState, fmtR } from "@xplatform/ui-kit";
 import { api } from "../api";
 import { useAccount, DEMO_ACCOUNTS } from "../AccountContext";
 
@@ -11,11 +11,13 @@ export function Pay() {
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("card");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<PaymentTransaction | { error: string } | null>(null);
 
-  useEffect(() => {
+  const load = () => {
     setLoading(true);
+    setLoadError(null);
     setResult(null);
     Promise.all([api.get<Account>(`/billing/accounts/${accountNumber}`), api.get<PaymentMethod[]>("/payments/methods")])
       .then(([acc, m]) => {
@@ -23,8 +25,11 @@ export function Pay() {
         setMethods(m);
         setAmount(acc.balance > 0 ? acc.balance.toFixed(2) : "");
       })
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load"))
       .finally(() => setLoading(false));
-  }, [accountNumber]);
+  };
+
+  useEffect(load, [accountNumber]);
 
   const submit = async () => {
     setSubmitting(true);
@@ -45,13 +50,8 @@ export function Pay() {
     }
   };
 
-  if (loading || !account) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, color: T.g100 }}>
-        <Spin /> Loading…
-      </div>
-    );
-  }
+  if (loading) return <LoadingState />;
+  if (loadError || !account) return <ErrorState message={loadError ?? "Account not found"} onRetry={load} />;
 
   return (
     <div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Account, Campaign, ComplianceScore, PaymentMethod, PlatformStatus } from "@xplatform/shared-types";
-import { T, IC, Card, CH, KpiCard, SectionTitle, Badge, LiveDot, Btn, Spin, fmtN, fmtR } from "@xplatform/ui-kit";
+import { T, IC, Card, CH, KpiCard, SectionTitle, Badge, LiveDot, Btn, Spin, LoadingState, ErrorState, fmtN, fmtR } from "@xplatform/ui-kit";
 import { api } from "../api";
 
 interface ChatbotStats {
@@ -19,10 +19,13 @@ export function CommandCentre() {
   const [compliance, setCompliance] = useState<ComplianceScore | null>(null);
   const [platform, setPlatform] = useState<PlatformStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [insight, setInsight] = useState<{ text: string; mocked: boolean } | null>(null);
   const [insightLoading, setInsightLoading] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true);
+    setError(null);
     Promise.all([
       api.get<Account[]>("/billing/accounts"),
       api.get<PaymentMethod[]>("/payments/methods"),
@@ -39,8 +42,11 @@ export function CommandCentre() {
         setCompliance(comp);
         setPlatform(plat);
       })
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load platform data"))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(load, []);
 
   const runInsight = async () => {
     setInsightLoading(true);
@@ -51,13 +57,8 @@ export function CommandCentre() {
     setInsightLoading(false);
   };
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, color: T.g100 }}>
-        <Spin /> Loading platform data…
-      </div>
-    );
-  }
+  if (loading) return <LoadingState label="Loading platform data…" />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
 
   const outstanding = accounts.reduce((sum, a) => sum + a.balance, 0);
   const activeMethods = methods.filter((m) => m.status === "active");

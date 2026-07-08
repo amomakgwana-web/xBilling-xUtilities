@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Meter, MeterFault } from "@xplatform/shared-types";
-import { T, IC, Card, CH, KpiCard, SectionTitle, Badge, LiveDot, Spin, fmtN } from "@xplatform/ui-kit";
+import { T, IC, Card, CH, KpiCard, SectionTitle, Badge, LiveDot, LoadingState, ErrorState, fmtN } from "@xplatform/ui-kit";
 import { api } from "../api";
 
 export function Dashboard() {
@@ -9,23 +9,24 @@ export function Dashboard() {
   const [meters, setMeters] = useState<Meter[]>([]);
   const [faults, setFaults] = useState<MeterFault[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true);
+    setError(null);
     Promise.all([api.get<Meter[]>("/metering/meters"), api.get<MeterFault[]>("/metering/faults")])
       .then(([m, f]) => {
         setMeters(m);
         setFaults(f);
       })
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load metering data"))
       .finally(() => setLoading(false));
-  }, []);
+  };
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, color: T.g100 }}>
-        <Spin /> Loading metering data…
-      </div>
-    );
-  }
+  useEffect(load, []);
+
+  if (loading) return <LoadingState label="Loading metering data…" />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
 
   const normalCount = meters.filter((m) => m.status === "normal").length;
   const openFaults = faults.filter((f) => f.status !== "resolved");
