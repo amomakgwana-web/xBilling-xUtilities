@@ -1,0 +1,22 @@
+{
+  "name": "xbilling-xutilities-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "xBilling / xUtilities microservices platform monorepo",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "setup": "node scripts/setup-env.mjs && pnpm install",
+    "build": "pnpm -r --workspace-concurrency=1 run build",
+    "dev": "pnpm -r --parallel run dev",
+    "dev:services": "pnpm --filter \"./services/*\" --parallel run dev",
+    "dev:apps": "pnpm --filter \"./apps/*\" --parallel run dev",
+    "typecheck": "pnpm -r run typecheck",
+    "clean": "pnpm -r run clean"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "packageManager": "pnpm@10.33.0"
+}

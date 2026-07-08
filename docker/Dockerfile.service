@@ -1,0 +1,30 @@
+# Builds any one backend service in services/<SERVICE> along with the
+# workspace packages it depends on. Build with:
+#   docker build -f docker/Dockerfile.service --build-arg SERVICE=billing-service -t xplatform/billing-service .
+ARG NODE_VERSION=20-alpine
+FROM node:${NODE_VERSION} AS build
+WORKDIR /app
+RUN corepack enable
+
+COPY pnpm-workspace.yaml package.json tsconfig.base.json ./
+COPY packages ./packages
+COPY services ./services
+
+RUN pnpm install --no-frozen-lockfile
+
+ARG SERVICE
+RUN test -n "$SERVICE" || (echo "SERVICE build-arg is required" && exit 1)
+RUN pnpm --filter "@xplatform/shared-types" --filter "@xplatform/integrations" --filter "@xplatform/${SERVICE}" run build
+
+FROM node:${NODE_VERSION} AS runtime
+WORKDIR /app
+RUN corepack enable
+ENV NODE_ENV=production
+
+COPY --from=build /app /app
+
+ARG SERVICE
+ENV SERVICE_DIR=/app/services/${SERVICE}
+WORKDIR /app/services/${SERVICE}
+
+CMD ["node", "dist/index.js"]

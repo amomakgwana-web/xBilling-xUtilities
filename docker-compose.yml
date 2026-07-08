@@ -1,0 +1,135 @@
+name: xplatform
+
+networks:
+  xplatform:
+    driver: bridge
+
+services:
+  billing-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+      args:
+        SERVICE: billing-service
+    environment:
+      PORT: 4001
+      CORS_ORIGIN: "*"
+    ports:
+      - "4001:4001"
+    networks: [xplatform]
+
+  payments-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+      args:
+        SERVICE: payments-service
+    environment:
+      PORT: 4002
+      CORS_ORIGIN: "*"
+      BILLING_SERVICE_URL: http://billing-service:4001
+    ports:
+      - "4002:4002"
+    depends_on: [billing-service]
+    networks: [xplatform]
+
+  metering-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+      args:
+        SERVICE: metering-service
+    environment:
+      PORT: 4003
+      CORS_ORIGIN: "*"
+    ports:
+      - "4003:4003"
+    networks: [xplatform]
+
+  comms-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+      args:
+        SERVICE: comms-service
+    environment:
+      PORT: 4004
+      CORS_ORIGIN: "*"
+      # ANTHROPIC_API_KEY: set this to enable live AI insight/draft generation.
+    ports:
+      - "4004:4004"
+    networks: [xplatform]
+
+  compliance-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+      args:
+        SERVICE: compliance-service
+    environment:
+      PORT: 4005
+      CORS_ORIGIN: "*"
+    ports:
+      - "4005:4005"
+    networks: [xplatform]
+
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.service
+      args:
+        SERVICE: gateway
+    environment:
+      PORT: 4000
+      JWT_SECRET: dev-secret-change-me
+      CORS_ORIGIN: "http://localhost:5173,http://localhost:5174,http://localhost:5175"
+      BILLING_SERVICE_URL: http://billing-service:4001
+      PAYMENTS_SERVICE_URL: http://payments-service:4002
+      METERING_SERVICE_URL: http://metering-service:4003
+      COMMS_SERVICE_URL: http://comms-service:4004
+      COMPLIANCE_SERVICE_URL: http://compliance-service:4005
+    ports:
+      - "4000:4000"
+    depends_on:
+      - billing-service
+      - payments-service
+      - metering-service
+      - comms-service
+      - compliance-service
+    networks: [xplatform]
+
+  web-xlayer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      args:
+        APP: web-xlayer
+        VITE_API_BASE_URL: http://localhost:4000/api
+    ports:
+      - "5173:80"
+    depends_on: [gateway]
+    networks: [xplatform]
+
+  web-xbilling:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      args:
+        APP: web-xbilling
+        VITE_API_BASE_URL: http://localhost:4000/api
+    ports:
+      - "5174:80"
+    depends_on: [gateway]
+    networks: [xplatform]
+
+  web-xutilities:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      args:
+        APP: web-xutilities
+        VITE_API_BASE_URL: http://localhost:4000/api
+    ports:
+      - "5175:80"
+    depends_on: [gateway]
+    networks: [xplatform]
