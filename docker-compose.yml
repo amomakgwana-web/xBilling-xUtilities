@@ -14,6 +14,10 @@ services:
     environment:
       PORT: 4001
       CORS_ORIGIN: "*"
+      # Set DATABASE_URL in a root .env (gitignored) — same value for all 5
+      # services, pointed at the shared Supabase project via the
+      # least-privilege `app_service` role. See README.md > Persistence.
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required — see README.md > Persistence}
     ports:
       - "4001:4001"
     networks: [xplatform]
@@ -28,6 +32,7 @@ services:
       PORT: 4002
       CORS_ORIGIN: "*"
       BILLING_SERVICE_URL: http://billing-service:4001
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required — see README.md > Persistence}
     ports:
       - "4002:4002"
     depends_on: [billing-service]
@@ -42,6 +47,7 @@ services:
     environment:
       PORT: 4003
       CORS_ORIGIN: "*"
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required — see README.md > Persistence}
     ports:
       - "4003:4003"
     networks: [xplatform]
@@ -55,6 +61,7 @@ services:
     environment:
       PORT: 4004
       CORS_ORIGIN: "*"
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required — see README.md > Persistence}
       # ANTHROPIC_API_KEY: set this to enable live AI insight/draft generation.
     ports:
       - "4004:4004"
@@ -69,6 +76,7 @@ services:
     environment:
       PORT: 4005
       CORS_ORIGIN: "*"
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required — see README.md > Persistence}
     ports:
       - "4005:4005"
     networks: [xplatform]

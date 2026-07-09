@@ -1,12 +1,13 @@
 import { Router } from "express";
-import { integrations } from "../store.js";
+import { listIntegrations } from "../repository.js";
 
 export const integrationsRouter: Router = Router();
 
-integrationsRouter.get("/", (req, res) => {
+integrationsRouter.get("/", async (req, res) => {
   const { category, status } = req.query;
-  let result = integrations;
-  if (category) result = result.filter((i) => i.category === category);
-  if (status) result = result.filter((i) => i.status === status);
+  const result = await listIntegrations({
+    category: typeof category === "string" ? category : undefined,
+    status: typeof status === "string" ? status : undefined,
+  });
   res.json({ ok: true, data: result, meta: { service: "compliance-service", tookMs: 0 } });
 });

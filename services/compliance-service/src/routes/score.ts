@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { complianceScore } from "../store.js";
+import { getComplianceScore } from "../repository.js";
 
 export const scoreRouter: Router = Router();
 
-scoreRouter.get("/", (_req, res) => {
+scoreRouter.get("/", async (_req, res) => {
+  const complianceScore = await getComplianceScore();
   res.json({ ok: true, data: complianceScore, meta: { service: "compliance-service", tookMs: 0 } });
 });

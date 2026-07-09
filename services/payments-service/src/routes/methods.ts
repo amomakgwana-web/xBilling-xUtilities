@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { paymentMethods } from "../store.js";
+import { listPaymentMethods } from "../repository.js";
 
 export const methodsRouter: Router = Router();
 
-methodsRouter.get("/", (_req, res) => {
-  res.json({ ok: true, data: paymentMethods, meta: { service: "payments-service", tookMs: 0 } });
+methodsRouter.get("/", async (_req, res) => {
+  const methods = await listPaymentMethods();
+  res.json({ ok: true, data: methods, meta: { service: "payments-service", tookMs: 0 } });
 });

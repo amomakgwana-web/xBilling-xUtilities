@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { PaymentInitiationRequestSchema, type PaymentInitiationRequest } from "@xplatform/shared-types";
+import { PaymentInitiationRequestSchema, type PaymentInitiationRequest, type PaymentTransaction } from "@xplatform/shared-types";
 import { SwiftPayAdapter, CapitecPayAdapter, WhatsAppPayAdapter, SamsungPayAdapter, platformEventBus, IntegrationError } from "@xplatform/integrations";
-import { reconTransactions } from "../store.js";
+import { insertTransaction } from "../repository.js";
 import { applyPaymentToOldestInvoice } from "../billingClient.js";
 
 export const initiateRouter: Router = Router();
@@ -22,7 +22,7 @@ initiateRouter.post("/", async (req, res) => {
   try {
     const gatewayResult = await routeToGateway(method, parsed.data);
 
-    const tx = {
+    const tx: PaymentTransaction = {
       ref: gatewayResult.ref,
       accountNumber,
       consumerName: req.body?.consumerName ?? "Unknown",
@@ -30,10 +30,10 @@ initiateRouter.post("/", async (req, res) => {
       gateway: gatewayResult.gateway,
       method,
       status: gatewayResult.status,
-      erpStatus: gatewayResult.status === "matched" ? ("posted" as const) : ("pending" as const),
+      erpStatus: gatewayResult.status === "matched" ? "posted" : "pending",
       createdAt: gatewayResult.settledAt,
     };
-    reconTransactions.unshift(tx);
+    await insertTransaction(tx);
     platformEventBus.publish("payment.settled", tx);
 
     if (tx.status === "matched") {

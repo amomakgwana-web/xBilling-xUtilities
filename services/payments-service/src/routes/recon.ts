@@ -1,19 +1,18 @@
 import { Router } from "express";
-import { reconTransactions } from "../store.js";
+import { listTransactions, resolveTransaction } from "../repository.js";
 
 export const reconRouter: Router = Router();
 
-reconRouter.get("/", (_req, res) => {
-  res.json({ ok: true, data: reconTransactions, meta: { service: "payments-service", tookMs: 0 } });
+reconRouter.get("/", async (_req, res) => {
+  const transactions = await listTransactions();
+  res.json({ ok: true, data: transactions, meta: { service: "payments-service", tookMs: 0 } });
 });
 
-reconRouter.post("/:ref/resolve", (req, res) => {
-  const tx = reconTransactions.find((t) => t.ref === req.params.ref);
+reconRouter.post("/:ref/resolve", async (req, res) => {
+  const tx = await resolveTransaction(req.params.ref);
   if (!tx) {
     res.status(404).json({ ok: false, data: null, error: { code: "NOT_FOUND", message: "Transaction not found" } });
     return;
   }
-  tx.status = "matched";
-  tx.erpStatus = "posted";
   res.json({ ok: true, data: tx, meta: { service: "payments-service", tookMs: 0 } });
 });

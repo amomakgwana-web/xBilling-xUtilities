@@ -50,18 +50,31 @@ COMMS_SERVICE_URL=http://comms-service.railway.internal:4004
 COMPLIANCE_SERVICE_URL=http://compliance-service.railway.internal:4005
 ```
 
-**billing-service**: `PORT=4001`, `CORS_ORIGIN=*`
+The 5 backend services (everything except `gateway`) also each need
+`DATABASE_URL` — same Supabase project ("xBilling"), same `app_service`
+role, only the schema each one reads/writes differs:
 
-**payments-service**: `PORT=4002`, `CORS_ORIGIN=*`,
+```
+DATABASE_URL=postgresql://app_service:<password>@db.unkkskpfvrejjfgrjyab.supabase.co:5432/postgres
+```
+
+Get the `app_service` password from whoever provisioned the project, or
+rotate it via the Supabase SQL editor: `ALTER ROLE app_service WITH
+PASSWORD '...';`. Do not use the project's `postgres` superuser here —
+`app_service` is scoped to only the 5 schemas these services touch.
+
+**billing-service**: `PORT=4001`, `CORS_ORIGIN=*`, `DATABASE_URL=...`
+
+**payments-service**: `PORT=4002`, `CORS_ORIGIN=*`, `DATABASE_URL=...`,
 `BILLING_SERVICE_URL=http://billing-service.railway.internal:4001`
 
-**metering-service**: `PORT=4003`, `CORS_ORIGIN=*`
+**metering-service**: `PORT=4003`, `CORS_ORIGIN=*`, `DATABASE_URL=...`
 
-**comms-service**: `PORT=4004`, `CORS_ORIGIN=*`, optionally
-`ANTHROPIC_API_KEY=<key>` to enable live AI insight/copy generation instead
-of the canned fallback
+**comms-service**: `PORT=4004`, `CORS_ORIGIN=*`, `DATABASE_URL=...`,
+optionally `ANTHROPIC_API_KEY=<key>` to enable live AI insight/copy
+generation instead of the canned fallback
 
-**compliance-service**: `PORT=4005`, `CORS_ORIGIN=*`
+**compliance-service**: `PORT=4005`, `CORS_ORIGIN=*`, `DATABASE_URL=...`
 
 Do **not** generate public domains for the five backend services — only
 `gateway` should be internet-reachable; the rest talk to each other over

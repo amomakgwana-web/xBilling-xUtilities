@@ -37,9 +37,36 @@ packages/
 ```
 
 Services communicate over plain HTTP with a consistent envelope
-(`{ ok, data, error?, meta? }`, defined in `@xplatform/shared-types`). Nothing
-shares a database — `payments-service` calls `billing-service` over HTTP to
-apply a settled payment to an invoice, the same way it would in production.
+(`{ ok, data, error?, meta? }`, defined in `@xplatform/shared-types`). No
+service reaches into another's data directly — `payments-service` calls
+`billing-service` over HTTP to apply a settled payment to an invoice, the
+same way it would in production.
+
+## Persistence
+
+Each service is backed by a real Postgres database — a Supabase project
+("xBilling") with one **schema per service** (`billing`, `payments`,
+`metering`, `comms`, `compliance`), so the microservice data-ownership
+boundary holds even though it's physically one Postgres instance: no service
+queries another's tables directly, and no cross-schema foreign keys exist.
+
+Each service connects via [Drizzle ORM](https://orm.drizzle.team/)
+(`src/db/schema.ts` + `src/db/client.ts`) using a dedicated `app_service`
+Postgres role scoped to only those 5 schemas — not the Supabase project's
+superuser. Every service needs `DATABASE_URL` set (see each
+`services/*/.env.example`); get the `app_service` password from whoever
+provisioned the project, or rotate it via the Supabase SQL editor:
+```sql
+ALTER ROLE app_service WITH PASSWORD 'new-password-here';
+```
+
+**Row Level Security is currently disabled** on all 14 tables. This is
+lower-risk than usual because they live in non-`public` schemas, which
+Supabase's auto-generated REST API doesn't expose unless you explicitly add
+them to the exposed-schema list — and nothing in this codebase does. If you
+ever query these tables via `supabase-js`/PostgREST from a browser (instead
+of the Drizzle connection these services use), enable RLS with policies
+first.
 
 ## What's mocked vs real
 
@@ -62,7 +89,11 @@ Auth is a dev-mode JWT issuer (`POST /api/auth/dev-login`) — replace
 
 ## Running locally
 
-Requires Node 20+ and pnpm.
+Requires Node 20+, pnpm, and the `app_service` Postgres password (see
+Persistence above) set as `DATABASE_URL` in each of the 5 backend services'
+`.env` files — `pnpm run setup` creates those files from `.env.example` but
+you still need to fill in the real password before `dev`/`build` will run
+(each service throws immediately on startup if `DATABASE_URL` is missing).
 
 ```bash
 pnpm run setup     # copies every services/*/.env.example and apps/*/.env.example to .env, then installs deps
@@ -105,7 +136,8 @@ build steps as the verified local pnpm workflow.
 
 ## Verification performed this session
 
-- `pnpm run build` succeeds cleanly across all 12 workspace packages from a
+Against the original in-memory version of the backend:
+- `pnpm run build` succeeds cleanly across all workspace packages from a
   fully clean state (no stale `dist`/`.tsbuildinfo`).
 - All 6 backend services boot and pass `/health`.
 - The gateway correctly proxies to every downstream service and aggregates
@@ -119,14 +151,28 @@ build steps as the verified local pnpm workflow.
   drill-down → pay-now flow (including a live payment confirmation), and
   xUtilities' dashboard → meters → token-vend flow.
 
+After migrating each service to Supabase Postgres via Drizzle:
+- `pnpm run build` still succeeds cleanly across all 12 workspace packages
+  from a fully clean state — every repository/route rewrite typechecks
+  against the exact Drizzle schema applied to the live database.
+- The schema (5 Postgres schemas, 14 tables) and seed data were applied and
+  verified directly against the live Supabase project via SQL, matching the
+  original in-memory seed data row-for-row.
+- **Not verified**: the actual Node service → Drizzle → Postgres runtime
+  path. This sandbox's network policy explicitly blocks raw-TCP database
+  connections (confirmed via its proxy documentation), so a live
+  end-to-end run against Supabase could not be exercised here. The
+  connection code follows the same patterns already verified for the rest
+  of the stack; running `pnpm run dev` with a real `DATABASE_URL` in an
+  environment with normal network access is the natural next check.
+
 ## What's next
 
-This is a breadth-first scaffold — every domain has a working, wired,
-end-to-end path, but each service's business logic (tariff calculation,
-real reconciliation matching rules, KYC risk scoring, etc.) is intentionally
-minimal and backed by in-memory data rather than a persisted database.
-Natural next steps: give each service its own Postgres schema, add
-integration tests around the cross-service HTTP calls, replace the dev-mode
-JWT auth with a real IdP, and flesh out the remaining views from the
-original mockups (DebiCheck mandate creation, dispute workflow, statement
-PDF generation).
+Every domain has a working, wired, end-to-end path with real persistence,
+but business logic (tariff calculation, real reconciliation matching rules,
+KYC risk scoring, etc.) is intentionally minimal. Natural next steps: run
+the live-DB verification noted above, enable RLS on the Supabase tables if
+you add browser-side `supabase-js` access, add integration tests around the
+cross-service HTTP calls, replace the dev-mode JWT auth with a real IdP, and
+flesh out the remaining views from the original mockups (DebiCheck mandate
+creation, dispute workflow, statement PDF generation).

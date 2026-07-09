@@ -1,12 +1,13 @@
 import { Router } from "express";
 import type { Campaign } from "@xplatform/shared-types";
 import { MacroCommAdapter } from "@xplatform/integrations";
-import { campaigns, nextCampaignId } from "../store.js";
+import { createCampaign, listCampaigns, markCampaignSent, nextCampaignId } from "../repository.js";
 
 export const campaignsRouter: Router = Router();
 const macrocomm = new MacroCommAdapter();
 
-campaignsRouter.get("/", (_req, res) => {
+campaignsRouter.get("/", async (_req, res) => {
+  const campaigns = await listCampaigns();
   res.json({ ok: true, data: campaigns, meta: { service: "comms-service", tookMs: 0 } });
 });
 
@@ -30,13 +31,14 @@ campaignsRouter.post("/", async (req, res) => {
     createdAt: new Date().toISOString().slice(0, 10),
     municipality: municipality ?? "All",
   };
-  campaigns.unshift(campaign);
+  await createCampaign(campaign);
 
   if (recipients.length > 0) {
     const batch =
       type === "SMS"
         ? await macrocomm.sendBulkSms(recipients, req.body?.message ?? "")
         : await macrocomm.sendBulkEmail(recipients, req.body?.subject ?? "", req.body?.html ?? "");
+    await markCampaignSent(campaign.id, batch.queued);
     campaign.status = "running";
     campaign.sent = batch.queued;
   }
