@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./router": {
+      "types": "./dist/router.d.ts",
+      "default": "./dist/router.js"
+    }
+  },
   "scripts": {
     "build": "tsc -b",
     "dev": "tsx watch src/index.ts",

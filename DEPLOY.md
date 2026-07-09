@@ -1,11 +1,22 @@
-# Deploying to Railway (backend) + Vercel (frontends)
+# Deploying this platform
 
-Neither platform has a connector this session can drive directly, so the
-steps below are the dashboard clicks to do it yourself. Everything in this
-repo is already set up so no extra config should be needed beyond what's
-described here.
+Two documented paths, depending on what you're hosting on:
 
-## Backend — Railway
+- **Railway (backend) + Vercel (frontends)** — the 6 backend services stay
+  separate, matching how they run locally. Needs both platforms to support
+  long-running Node processes, which Railway does and Vercel's serverless
+  frontends don't need to.
+- **Afrihost shared hosting (cPanel) + GitHub** — for hosts where you can't
+  run 6 separate long-lived Node processes. Everything backend-side is
+  consolidated into **one process** (`services/cpanel-server`) that mounts
+  all 5 domains' routers directly — same routes, same Postgres schemas, same
+  business logic, just one deployable file instead of six.
+
+No connector in this session can drive either Railway, Vercel, or a cPanel
+account directly, so both sections below are the manual steps to do it
+yourself.
+
+## Option A — Railway (backend) + Vercel (frontends)
 
 Create **one Railway project**, then add **six services** to it, all
 pointed at this GitHub repo (`amomakgwana-web/xBilling-xUtilities`,
@@ -106,3 +117,111 @@ first deploy of each project (or you'll need to redeploy after adding it).
 Then go back to the gateway's `CORS_ORIGIN` on Railway and fill in the
 three real Vercel domains once you have them (`https://web-xlayer.vercel.app`,
 etc.) — the gateway will reject requests from origins not in that list.
+
+## Option B — Afrihost shared hosting (cPanel) + GitHub
+
+### Why this differs from Option A
+
+Shared cPanel hosting typically can't run 6 separate long-lived Node
+processes, has no Docker, and has no Postgres. `services/cpanel-server`
+solves the first two by mounting all 5 domains' existing routers (billing,
+payments, metering, comms, compliance) into **one Express process** —
+same routes, same business logic, same Postgres schemas, just one thing to
+deploy. The database stays on Supabase either way (Afrihost's actual server
+has normal outbound internet access, unlike some sandboxed CI/dev
+environments, so it reaches Supabase over the public internet with no
+special networking needed).
+
+### Backend — one bundled file, zero npm install on the host
+
+cPanel's Node.js Selector runs its own `npm install` inside whatever
+"Application Root" you point it at — it has no concept of a pnpm monorepo.
+So instead of uploading the repo, build a single self-contained file and
+upload just that:
+
+```bash
+pnpm install
+pnpm --filter @xplatform/billing-service --filter @xplatform/payments-service \
+  --filter @xplatform/metering-service --filter @xplatform/comms-service \
+  --filter @xplatform/compliance-service --filter @xplatform/shared-types run build
+pnpm --filter @xplatform/cpanel-server run bundle
+```
+
+This produces `services/cpanel-server/dist-bundle/server.mjs` — every
+dependency (workspace packages and npm packages alike) is inlined via
+esbuild, since none of them use native addons. The only thing the host needs
+is a Node.js runtime; there's no `node_modules` to install at all. Verified
+locally in this session: copied just `server.mjs` + a `.env` into an empty
+directory with zero `node_modules` and it ran correctly, including a real
+cross-service payment settling through to a persisted invoice update.
+
+**On Afrihost:**
+1. cPanel → **Setup Node.js App** → create a new application
+   - Node.js version: 20 or later
+   - Application mode: Production
+   - Application root: e.g. `xbilling-api` (any folder name)
+   - Application startup file: `server.mjs`
+2. Upload `server.mjs` into that application root (via the File Manager or
+   `scp`/`rsync` over SSH) — nothing else needs to go there
+3. In the same "Setup Node.js App" screen, add environment variables (or
+   create a `.env` file alongside `server.mjs` — either works, since
+   `env.ts` calls `process.loadEnvFile()`):
+```
+PORT=<cPanel assigns this automatically — check what it filled in>
+CORS_ORIGIN=https://<your-frontend-domain>
+JWT_SECRET=<generate a real secret>
+DATABASE_URL=postgresql://app_service:<password>@db.unkkskpfvrejjfgrjyab.supabase.co:5432/postgres
+```
+   (`ANTHROPIC_API_KEY` optional, same as the Railway path — see comms-service)
+4. Click "Start App" / restart. cPanel's Passenger process manager keeps it
+   running and restarts it if it crashes — no separate process manager
+   (pm2, systemd) needed.
+5. Note the URL cPanel gives this app (either a subdomain, or a path proxied
+   through your main domain, depending on how you configured it) — the
+   frontends need it as their API base URL.
+
+If your plan's Node.js Selector doesn't allow re-running `npm install`
+after upload, that's fine — the bundle has no dependencies to install; just
+point the startup file at `server.mjs` and start it.
+
+### Frontends — static upload, no Node needed
+
+The 3 frontends are plain static sites once built — no different from any
+other static site on shared hosting:
+
+```bash
+pnpm --filter @xplatform/shared-types --filter @xplatform/ui-kit run build
+VITE_API_BASE_URL=https://<your-cpanel-server-domain>/api pnpm --filter @xplatform/web-xlayer run build
+VITE_API_BASE_URL=https://<your-cpanel-server-domain>/api pnpm --filter @xplatform/web-xbilling run build
+VITE_API_BASE_URL=https://<your-cpanel-server-domain>/api pnpm --filter @xplatform/web-xutilities run build
+```
+
+Each produces a `dist/` folder (`index.html` + `assets/`). Upload each one
+to wherever you want it served from — e.g. `public_html/` for your main
+domain, or a subdomain's document root for each (`app.yourdomain.co.za`,
+`admin.yourdomain.co.za`, etc.) via cPanel's File Manager or:
+
+```bash
+rsync -avz apps/web-xlayer/dist/ user@yourserver:~/public_html/app/
+rsync -avz apps/web-xbilling/dist/ user@yourserver:~/public_html/billing/
+rsync -avz apps/web-xutilities/dist/ user@yourserver:~/public_html/utilities/
+```
+
+Since these are client-side-routed single-page apps (`react-router-dom`),
+add a rewrite rule so deep links (e.g. refreshing on `/invoices`) don't
+404 — a `.htaccess` in each frontend's upload directory:
+```apache
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>
+```
+
+Once the backend has a real domain, go back and rebuild the 3 frontends
+with the correct `VITE_API_BASE_URL` (Vite bakes it in at build time, so
+this can't be changed after the fact without rebuilding), and update the
+backend's `CORS_ORIGIN` to list the real frontend domain(s).

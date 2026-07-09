@@ -1,35 +1,35 @@
 {
-  "name": "@xplatform/payments-service",
+  "name": "@xplatform/cpanel-server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": {
-    "./router": {
-      "types": "./dist/router.d.ts",
-      "default": "./dist/router.js"
-    }
-  },
   "scripts": {
     "build": "tsc -b",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "typecheck": "tsc -b",
-    "clean": "rm -rf dist *.tsbuildinfo"
+    "clean": "rm -rf dist dist-bundle *.tsbuildinfo",
+    "bundle": "node esbuild.config.mjs"
   },
   "dependencies": {
     "@xplatform/shared-types": "workspace:*",
-    "@xplatform/integrations": "workspace:*",
+    "@xplatform/billing-service": "workspace:*",
+    "@xplatform/payments-service": "workspace:*",
+    "@xplatform/metering-service": "workspace:*",
+    "@xplatform/comms-service": "workspace:*",
+    "@xplatform/compliance-service": "workspace:*",
     "cors": "^2.8.5",
-    "drizzle-orm": "^0.36.4",
     "express": "^4.21.1",
-    "morgan": "^1.10.0",
-    "postgres": "^3.4.5"
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.7",
     "@types/morgan": "^1.9.9",
     "@types/node": "^20.17.6",
+    "esbuild": "^0.24.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }
