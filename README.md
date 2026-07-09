@@ -158,21 +158,25 @@ After migrating each service to Supabase Postgres via Drizzle:
 - The schema (5 Postgres schemas, 14 tables) and seed data were applied and
   verified directly against the live Supabase project via SQL, matching the
   original in-memory seed data row-for-row.
-- **Not verified**: the actual Node service → Drizzle → Postgres runtime
-  path. This sandbox's network policy explicitly blocks raw-TCP database
-  connections (confirmed via its proxy documentation), so a live
-  end-to-end run against Supabase could not be exercised here. The
-  connection code follows the same patterns already verified for the rest
-  of the stack; running `pnpm run dev` with a real `DATABASE_URL` in an
-  environment with normal network access is the natural next check.
+- This sandbox's network policy blocks raw-TCP connections to Supabase
+  specifically (confirmed via its proxy docs), so live verification used a
+  local Postgres instance seeded with the identical schema/data instead.
+  That caught a real bug: `DATABASE_URL` was being read before `.env` was
+  loaded (same root cause as the earlier gateway fix — ESM imports evaluate
+  before `index.ts`'s own top-level code runs), which crashed every service
+  on boot. Fixed and re-verified: all 6 services passed `/health`, a
+  cross-service payment settled through to a persisted invoice update, and
+  all three frontends were loaded in a browser against the live stack.
 
 ## What's next
 
 Every domain has a working, wired, end-to-end path with real persistence,
 but business logic (tariff calculation, real reconciliation matching rules,
 KYC risk scoring, etc.) is intentionally minimal. Natural next steps: run
-the live-DB verification noted above, enable RLS on the Supabase tables if
-you add browser-side `supabase-js` access, add integration tests around the
-cross-service HTTP calls, replace the dev-mode JWT auth with a real IdP, and
-flesh out the remaining views from the original mockups (DebiCheck mandate
-creation, dispute workflow, statement PDF generation).
+the same verification against the actual Supabase project (not just a local
+stand-in) from an environment with normal network access, enable RLS on the
+Supabase tables if you add browser-side `supabase-js` access, add
+integration tests around the cross-service HTTP calls, replace the dev-mode
+JWT auth with a real IdP, and flesh out the remaining views from the
+original mockups (DebiCheck mandate creation, dispute workflow, statement
+PDF generation).
