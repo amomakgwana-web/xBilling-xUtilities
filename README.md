@@ -28,6 +28,9 @@ services/
                           optional AI insight/copy generation
   compliance-service/    Third-party integration registry, KYC checks,
                           ISO 27001 / POPIA / PCI-DSS compliance score
+  cpanel-server/         Alternative deploy target: mounts all 5 domains'
+                          routers into one process for hosts that can't run
+                          6 separate services (see DEPLOY.md > Option B)
 
 packages/
   shared-types/     Zod schemas + TS types shared by every service and frontend
