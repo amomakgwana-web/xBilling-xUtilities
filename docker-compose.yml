@@ -90,7 +90,7 @@ services:
     environment:
       PORT: 4000
       JWT_SECRET: dev-secret-change-me
-      CORS_ORIGIN: "http://localhost:5173,http://localhost:5174,http://localhost:5175"
+      CORS_ORIGIN: "http://localhost:5173"
       BILLING_SERVICE_URL: http://billing-service:4001
       PAYMENTS_SERVICE_URL: http://payments-service:4002
       METERING_SERVICE_URL: http://metering-service:4003
@@ -106,38 +106,14 @@ services:
       - compliance-service
     networks: [xplatform]
 
-  web-xlayer:
+  web-platform:
     build:
       context: .
       dockerfile: docker/Dockerfile.web
       args:
-        APP: web-xlayer
+        APP: web-platform
         VITE_API_BASE_URL: http://localhost:4000/api
     ports:
       - "5173:80"
-    depends_on: [gateway]
-    networks: [xplatform]
-
-  web-xbilling:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.web
-      args:
-        APP: web-xbilling
-        VITE_API_BASE_URL: http://localhost:4000/api
-    ports:
-      - "5174:80"
-    depends_on: [gateway]
-    networks: [xplatform]
-
-  web-xutilities:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.web
-      args:
-        APP: web-xutilities
-        VITE_API_BASE_URL: http://localhost:4000/api
-    ports:
-      - "5175:80"
     depends_on: [gateway]
     networks: [xplatform]

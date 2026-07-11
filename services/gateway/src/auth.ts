@@ -37,3 +37,14 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     res.status(401).json({ ok: false, data: null, error: { code: "INVALID_TOKEN", message: "Token is invalid or expired" } });
   }
 }
+
+/** Gate a route to specific roles. Must run after requireAuth. */
+export function requireRole(...roles: Array<AuthedUser["role"]>) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      res.status(403).json({ ok: false, data: null, error: { code: "FORBIDDEN", message: `Requires one of roles: ${roles.join(", ")}` } });
+      return;
+    }
+    next();
+  };
+}

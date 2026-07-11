@@ -1,21 +1,24 @@
 # xBilling / xUtilities Platform
 
 A microservices platform for South African municipal utility billing —
-consumer billing (xBilling), utilities operations (xUtilities), and a unified
+consumer billing (xBilling), utilities operations (xUtilities), and a
 platform console (xLayer) sitting across billing, payments, metering and
-communications.
+communications — delivered as **one unified web platform**: a single
+console with one sign-in, where each persona (citizen, municipal official,
+platform operator) sees the product areas they're entitled to.
 
 ## Architecture
 
 Node.js/TypeScript pnpm monorepo. Each backend service owns its own data and
-is only reachable through the API gateway; frontends never call a downstream
-service directly.
+is only reachable through the API gateway; the frontend never calls a
+downstream service directly.
 
 ```
 apps/
-  web-xlayer/       Platform console — command centre, payments, campaigns, integrations
-  web-xbilling/     Consumer billing portal — dashboard, invoices, pay now
-  web-xutilities/   Utilities admin — meters, faults, dispatch
+  web-platform/     Unified console — one sign-in, three role-gated product areas:
+                      xLayer    (operator)            command centre, payments ops, campaigns, integrations
+                      xBilling  (citizen + operator)  dashboard, invoices, pay now
+                      xUtilities(official + operator) meters, token vending, faults
 
 services/
   gateway/              Single entry point: proxies /api/* to services below,
@@ -33,7 +36,7 @@ packages/
   shared-types/     Zod schemas + TS types shared by every service and frontend
   integrations/     Mock adapters for third parties (see below)
   ui-kit/           Shared design tokens, icons and React primitives —
-                     the dark command-centre look used by all three frontends
+                     the dark command-centre look used across the console
 ```
 
 Services communicate over plain HTTP with a consistent envelope
@@ -84,8 +87,26 @@ API server-side (never from the browser) only if `ANTHROPIC_API_KEY` is set
 on `comms-service`; otherwise every caller gets a deterministic canned
 response instead of an error.
 
-Auth is a dev-mode JWT issuer (`POST /api/auth/dev-login`) — replace
-`services/gateway/src/auth.ts` with a real IdP before production.
+## Auth
+
+Sign-in is unified: the console's login screen calls the gateway's dev-mode
+JWT issuer (`POST /api/auth/dev-login`) with one of three personas —
+**Citizen** (role `consumer`, bound to their own billing account),
+**Municipal Official** and **Platform Operator** (both role `admin`). The
+gateway now **enforces** the token on every proxied `/api/*` route:
+
+| Route            | Allowed roles              |
+|-------------------|-----------------------------|
+| `/api/billing`     | consumer, admin, service     |
+| `/api/payments`    | consumer, admin, service     |
+| `/api/metering`    | admin, service               |
+| `/api/comms`       | admin, service               |
+| `/api/compliance`  | admin, service               |
+
+`/api/auth/dev-login` and `/api/platform/status` stay open. The frontend
+attaches the token to every call and returns the user to the login screen
+on a 401. Replace `services/gateway/src/auth.ts` with a real IdP before
+production — the RBAC shape is already in place around `req.user`.
 
 ## Running locally
 
@@ -111,17 +132,15 @@ Ports:
 | metering-service       | 4003 |
 | comms-service          | 4004 |
 | compliance-service     | 4005 |
-| web-xlayer             | 5173 |
-| web-xbilling           | 5174 |
-| web-xutilities         | 5175 |
+| web-platform           | 5173 |
 
-All three frontends read `VITE_API_BASE_URL` (defaults to
-`http://localhost:4000/api`, i.e. the gateway) and never call a backend
+The frontend reads `VITE_API_BASE_URL` (defaults to
+`http://localhost:4000/api`, i.e. the gateway) and never calls a backend
 service directly.
 
 ## Docker
 
-`docker-compose.yml` builds every service and frontend (frontends via a
+`docker-compose.yml` builds every service and the unified frontend (via a
 multi-stage build that serves the static Vite bundle through nginx) and wires
 them together on one bridge network:
 
@@ -167,6 +186,27 @@ After migrating each service to Supabase Postgres via Drizzle:
   on boot. Fixed and re-verified: all 6 services passed `/health`, a
   cross-service payment settled through to a persisted invoice update, and
   all three frontends were loaded in a browser against the live stack.
+
+After unifying the three frontends into `apps/web-platform` and turning on
+gateway auth enforcement:
+- `pnpm run build` succeeds cleanly across all workspace packages including
+  the new unified app.
+- Live verification against all 6 services backed by a Postgres instance
+  seeded with the exact schema/data of the Supabase project (this sandbox
+  still can't open raw-TCP connections to Supabase, so a local stand-in was
+  used again):
+  - Unauthenticated `/api/*` calls are rejected 401; a consumer JWT is
+    rejected 403 on `/api/metering`, `/api/comms` and `/api/compliance` but
+    accepted on billing/payments; an admin JWT reaches everything.
+  - The full cross-service payment flow was re-run **with a consumer
+    bearer token**: `POST /api/payments/initiate` → SwiftPay mock settles →
+    billing invoice/balance persist the payment.
+  - A real browser walked the whole console: unauthenticated redirect to
+    `/login`; operator sign-in sees all three product areas and every page
+    renders live data; citizen sign-in is locked to their own account, has
+    only the xBilling section, gets bounced from deep-links to other areas,
+    and completed a pay-now flow; official sign-in has only the xUtilities
+    section and vended a prepaid token. Screenshots taken at every step.
 
 ## What's next
 

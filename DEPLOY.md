@@ -1,4 +1,4 @@
-# Deploying to Railway (backend) + Vercel (frontends)
+# Deploying to Railway (backend) + Vercel (frontend)
 
 Neither platform has a connector this session can drive directly, so the
 steps below are the dashboard clicks to do it yourself. Everything in this
@@ -42,7 +42,7 @@ Domain" on this one only):
 ```
 PORT=4000
 JWT_SECRET=<generate a real secret, not the local dev one>
-CORS_ORIGIN=https://<your-web-xlayer-domain>,https://<your-web-xbilling-domain>,https://<your-web-xutilities-domain>
+CORS_ORIGIN=https://<your-web-platform-domain>
 BILLING_SERVICE_URL=http://billing-service.railway.internal:4001
 PAYMENTS_SERVICE_URL=http://payments-service.railway.internal:4002
 METERING_SERVICE_URL=http://metering-service.railway.internal:4003
@@ -81,28 +81,26 @@ Do **not** generate public domains for the five backend services — only
 Railway's private network, same boundary as `docker-compose.yml` locally.
 
 Once `gateway` has a public domain, note its URL
-(`https://gateway-production-xxxx.up.railway.app`) — the frontends need it.
+(`https://gateway-production-xxxx.up.railway.app`) — the frontend needs it.
 
-## Frontends — Vercel
+## Frontend — Vercel
 
-Import this repo three times at [vercel.com/new](https://vercel.com/new)
+Import this repo once at [vercel.com/new](https://vercel.com/new)
 (Vercel auto-detects the pnpm workspace from `pnpm-workspace.yaml`, no
 extra config needed):
 
 | Vercel project | Root Directory        |
 |------------------|-------------------------|
-| web-xlayer        | `apps/web-xlayer`        |
-| web-xbilling      | `apps/web-xbilling`      |
-| web-xutilities    | `apps/web-xutilities`    |
+| web-platform      | `apps/web-platform`      |
 
-For each, set the environment variable:
+Set the environment variable:
 ```
 VITE_API_BASE_URL=https://<your-gateway-railway-domain>/api
 ```
 
 Vite inlines env vars at build time, so this must be set **before** the
-first deploy of each project (or you'll need to redeploy after adding it).
+first deploy (or you'll need to redeploy after adding it).
 
 Then go back to the gateway's `CORS_ORIGIN` on Railway and fill in the
-three real Vercel domains once you have them (`https://web-xlayer.vercel.app`,
-etc.) — the gateway will reject requests from origins not in that list.
+real Vercel domain once you have it (`https://web-platform.vercel.app`) —
+the gateway will reject requests from origins not in that list.

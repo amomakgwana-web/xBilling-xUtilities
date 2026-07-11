@@ -2,8 +2,8 @@
 # nginx. VITE_API_BASE_URL must be supplied at build time (Vite inlines env
 # vars into the bundle) — it should point at wherever the browser can reach
 # the gateway, e.g. http://localhost:4000/api for local docker-compose use.
-#   docker build -f docker/Dockerfile.web --build-arg APP=web-xlayer \
-#     --build-arg VITE_API_BASE_URL=http://localhost:4000/api -t xplatform/web-xlayer .
+#   docker build -f docker/Dockerfile.web --build-arg APP=web-platform \
+#     --build-arg VITE_API_BASE_URL=http://localhost:4000/api -t xplatform/web-platform .
 ARG NODE_VERSION=20-alpine
 FROM node:${NODE_VERSION} AS build
 WORKDIR /app

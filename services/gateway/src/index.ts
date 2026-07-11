@@ -3,7 +3,7 @@ import cors from "cors";
 import morgan from "morgan";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { config } from "./config.js";
-import { issueToken, requireAuth } from "./auth.js";
+import { issueToken, requireAuth, requireRole, type AuthedUser } from "./auth.js";
 import { getPlatformStatus } from "./platformStatus.js";
 
 const app = express();
@@ -39,18 +39,24 @@ app.post("/api/auth/dev-login", express.json(), (req, res) => {
   res.json({ ok: true, data: { token } });
 });
 
-const routeMap: Array<{ path: string; target: string; auth?: boolean }> = [
-  { path: "/api/billing", target: config.services.billing },
-  { path: "/api/payments", target: config.services.payments },
-  { path: "/api/metering", target: config.services.metering },
-  { path: "/api/comms", target: config.services.comms },
-  { path: "/api/compliance", target: config.services.compliance },
+/**
+ * Every proxied domain requires a valid platform JWT. Consumers (citizens
+ * signed into the unified console) may reach billing and payments for
+ * self-service; the operational domains are admin/service only.
+ */
+const routeMap: Array<{ path: string; target: string; roles: Array<AuthedUser["role"]> }> = [
+  { path: "/api/billing", target: config.services.billing, roles: ["consumer", "admin", "service"] },
+  { path: "/api/payments", target: config.services.payments, roles: ["consumer", "admin", "service"] },
+  { path: "/api/metering", target: config.services.metering, roles: ["admin", "service"] },
+  { path: "/api/comms", target: config.services.comms, roles: ["admin", "service"] },
+  { path: "/api/compliance", target: config.services.compliance, roles: ["admin", "service"] },
 ];
 
 for (const route of routeMap) {
   app.use(
     route.path,
-    ...(route.auth ? [requireAuth] : []),
+    requireAuth,
+    requireRole(...route.roles),
     createProxyMiddleware({
       target: route.target,
       changeOrigin: true,
