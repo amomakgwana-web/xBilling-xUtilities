@@ -43,7 +43,7 @@ jobs:
       - name: Apply database schema and seed
         run: |
           psql "$DATABASE_URL" -c "create role app_service login;"
-          for f in db/001_schema.sql db/002_seed.sql db/003_real_platform.sql db/004_seed_real.sql; do
+          for f in db/*.sql; do
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
           done
 
