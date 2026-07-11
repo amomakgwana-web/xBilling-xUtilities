@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, or } from "drizzle-orm";
 import type { Account, BillingRun, Invoice, Municipality, Tariff } from "@xplatform/shared-types";
 import { db } from "./db/client.js";
 import { accounts, billingRuns, invoiceLines, invoices, tariffs } from "./db/schema.js";
@@ -113,8 +113,20 @@ export async function applyPaymentToInvoice(id: string, amount: number): Promise
   return getInvoiceById(id);
 }
 
-export async function getTariff(code: string): Promise<Tariff | null> {
-  const rows = await db.select().from(tariffs).where(eq(tariffs.code, code)).limit(1);
+/** The tariff row for `code` that was actually in force on `onDate` (YYYY-MM-DD). */
+export async function getTariff(code: string, onDate: string): Promise<Tariff | null> {
+  const rows = await db
+    .select()
+    .from(tariffs)
+    .where(
+      and(
+        eq(tariffs.code, code),
+        lte(tariffs.validFrom, onDate),
+        or(isNull(tariffs.validTo), gte(tariffs.validTo, onDate)),
+      ),
+    )
+    .orderBy(desc(tariffs.validFrom))
+    .limit(1);
   const row = rows[0];
   if (!row) return null;
   return {
@@ -125,6 +137,8 @@ export async function getTariff(code: string): Promise<Tariff | null> {
     refuseMonthly: Number(row.refuseMonthly),
     sewerMonthly: Number(row.sewerMonthly),
     vatRate: Number(row.vatRate),
+    validFrom: row.validFrom,
+    validTo: row.validTo ?? undefined,
   };
 }
 

@@ -19,15 +19,23 @@ export const accounts = billingSchema.table("accounts", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-/** Municipal tariff book — rates the billing engine applies per account. */
+/**
+ * Municipal tariff book — rates the billing engine applies per account.
+ * Effective-dated: a code has one row per period it was in force, so a rate
+ * change never rewrites the story of what an old invoice was actually
+ * billed at. `validTo` null means "still in force".
+ */
 export const tariffs = billingSchema.table("tariffs", {
-  code: text("code").primaryKey(),
+  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+  code: text("code").notNull(),
   description: text("description").notNull(),
   electricityPerKwh: numeric("electricity_per_kwh").notNull(),
   waterPerKl: numeric("water_per_kl").notNull(),
   refuseMonthly: numeric("refuse_monthly").notNull(),
   sewerMonthly: numeric("sewer_monthly").notNull(),
   vatRate: numeric("vat_rate").notNull().default("0.15"),
+  validFrom: date("valid_from").notNull(),
+  validTo: date("valid_to"),
 });
 
 export const invoices = billingSchema.table("invoices", {

@@ -24,6 +24,8 @@ export const TariffSchema = z.object({
   refuseMonthly: z.number(),
   sewerMonthly: z.number(),
   vatRate: z.number(),
+  validFrom: z.string(),
+  validTo: z.string().optional(),
 });
 export type Tariff = z.infer<typeof TariffSchema>;
 

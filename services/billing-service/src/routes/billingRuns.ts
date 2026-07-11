@@ -71,7 +71,7 @@ billingRunsRouter.post("/", async (req, res) => {
       const existing = await listInvoices({ accountNumber: account.accountNumber });
       if (existing.some((inv) => inv.billingPeriod === billingPeriod)) continue;
 
-      const tariff = await getTariff(account.tariffCode);
+      const tariff = await getTariff(account.tariffCode, issueDate);
       if (!tariff) continue;
 
       const lines: Invoice["lines"] = [];
