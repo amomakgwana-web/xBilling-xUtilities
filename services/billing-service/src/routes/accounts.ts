@@ -1,14 +1,17 @@
 import { Router } from "express";
-import { forbidConsumers, forbidForeignAccount } from "../identity.js";
+import { forbidConsumers, forbidForeignAccount, officialMunicipalityScope } from "../identity.js";
 import { getAccountByNumber, listAccounts } from "../repository.js";
 
 export const accountsRouter: Router = Router();
 
 accountsRouter.get("/", async (req, res) => {
   if (forbidConsumers(req, res)) return;
+  const scope = officialMunicipalityScope(req);
   const { municipality, status } = req.query;
   const result = await listAccounts({
-    municipality: typeof municipality === "string" ? municipality : undefined,
+    // An official's own municipality always wins over whatever the query
+    // string says — the arrears book they see is theirs, not the platform's.
+    municipality: scope ?? (typeof municipality === "string" ? municipality : undefined),
     status: typeof status === "string" ? status : undefined,
   });
   res.json({ ok: true, data: result, meta: { service: "billing-service", tookMs: 0 } });

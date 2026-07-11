@@ -24,7 +24,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     const body = (await res.json()) as {
       ok: boolean;
-      data: { token: string; user: { name: string; email: string; persona: Persona; accountNumber?: string } };
+      data: {
+        token: string;
+        user: { name: string; email: string; persona: Persona; accountNumber?: string; municipalityId?: string };
+      };
       error?: { message: string };
     };
     if (!body.ok) throw new Error(body.error?.message ?? "Sign-in failed");
@@ -33,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       persona: body.data.user.persona,
       name: body.data.user.name,
       accountNumber: body.data.user.accountNumber,
+      municipalityId: body.data.user.municipalityId,
     };
     saveSession(next);
     setSession(next);

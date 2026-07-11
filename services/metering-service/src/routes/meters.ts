@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { MeterReadingIngestSchema, TokenVendRequestSchema } from "@xplatform/shared-types";
 import { ConlogAdapter } from "@xplatform/integrations";
-import { callerFrom, forbidConsumers, forbidForeignAccount } from "../identity.js";
+import { callerFrom, forbidConsumers, forbidForeignAccount, officialMunicipalityScope } from "../identity.js";
 import { consumptionByMunicipality, getMeterBySerial, listMeters, updateMeterReading } from "../repository.js";
 
 export const metersRouter: Router = Router();
@@ -9,9 +9,10 @@ const conlog = new ConlogAdapter();
 
 metersRouter.get("/", async (req, res) => {
   const caller = callerFrom(req);
+  const scope = officialMunicipalityScope(req);
   const { municipality, status } = req.query;
   const result = await listMeters({
-    municipality: typeof municipality === "string" ? municipality : undefined,
+    municipality: scope ?? (typeof municipality === "string" ? municipality : undefined),
     status: typeof status === "string" ? status : undefined,
   });
   // Consumers only ever see the meters on their own account.

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Account, Campaign, Invoice } from "@xplatform/shared-types";
 import { T, IC, Card, CH, KpiCard, TRow, SectionTitle, Badge, Btn, Spin, LoadingState, ErrorState, fmtR } from "@xplatform/ui-kit";
 import { api } from "../../api";
+import { useAuth } from "../../auth/AuthContext";
 
 const BUCKETS = ["Current", "1–30 days", "31–60 days", "61–90 days", "90+ days"] as const;
 
@@ -14,6 +15,7 @@ function bucketFor(daysOverdue: number): (typeof BUCKETS)[number] {
 }
 
 export function Arrears() {
+  const { session } = useAuth();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,7 +59,10 @@ export function Arrears() {
       const campaign = await api.post<Campaign>("/comms/campaigns", {
         name: `Arrears reminder — ${new Date().toISOString().slice(0, 10)}`,
         type: "SMS",
-        municipality: "All",
+        // Officials only ever see their own municipality's book (server-
+        // enforced), so the campaign is scoped the same way; operators see
+        // the whole platform's arrears, so their reminder blast stays "All".
+        municipality: session?.municipalityId ?? "All",
         // Real MSISDNs from the billing accounts — live SMS when the comms
         // gateway has BulkSMS credentials, mock queue otherwise.
         recipients: rows.map((r) => r.phone ?? r.accountNumber),

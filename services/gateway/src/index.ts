@@ -3,9 +3,12 @@ import cors from "cors";
 import morgan from "morgan";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { config } from "./config.js";
+import { eq } from "drizzle-orm";
 import { issueToken, requireAuth, requireRole, type AuthedUser } from "./auth.js";
 import { getPlatformStatus } from "./platformStatus.js";
 import { verifyCredentials } from "./users.js";
+import { db } from "./db/client.js";
+import { municipalities } from "./db/schema.js";
 
 const app = express();
 app.use(cors({ origin: config.corsOrigin }));
@@ -47,14 +50,95 @@ app.post("/api/auth/login", express.json(), async (req, res) => {
     accountNumber: user.accountNumber,
     name: user.name,
     persona: user.persona,
+    municipalityId: user.municipalityId,
   });
   res.json({
     ok: true,
     data: {
       token,
-      user: { name: user.name, email: user.email, persona: user.persona, accountNumber: user.accountNumber },
+      user: {
+        name: user.name,
+        email: user.email,
+        persona: user.persona,
+        accountNumber: user.accountNumber,
+        municipalityId: user.municipalityId,
+      },
     },
   });
+});
+
+/**
+ * Municipality tenant data lives in the gateway's own platform schema
+ * (same place as users) rather than a dedicated service — one table
+ * doesn't earn its own microservice. Operators see and edit every
+ * municipality; officials — who share the coarser `admin` role with
+ * operators, so `persona` is what actually distinguishes them here — see
+ * and may only touch their own, and only its contact details, not its
+ * branding.
+ */
+app.get("/api/platform/municipalities", requireAuth, requireRole("admin", "service"), async (req, res, next) => {
+  try {
+    const rows =
+      req.user?.persona === "official"
+        ? await db.select().from(municipalities).where(eq(municipalities.id, req.user.municipalityId ?? ""))
+        : await db.select().from(municipalities);
+    res.json({ ok: true, data: rows, meta: { service: "gateway", tookMs: 0 } });
+  } catch (err) {
+    // Express 4 does not route a rejected promise from an async handler to
+    // error middleware on its own — an uncaught throw here would otherwise
+    // take down the whole gateway process, not just this request.
+    next(err);
+  }
+});
+
+app.patch("/api/platform/municipalities/:id", requireAuth, requireRole("admin", "service"), express.json(), async (req, res, next) => {
+  try {
+    const id = req.params.id;
+    if (!id) {
+      res.status(400).json({ ok: false, data: null, error: { code: "INVALID_REQUEST", message: "id is required" } });
+      return;
+    }
+    const isOperator = req.user?.persona === "operator" || req.user?.persona === undefined;
+    const isOwnMunicipality = req.user?.persona === "official" && req.user.municipalityId === id;
+    if (!isOperator && !isOwnMunicipality) {
+      res.status(403).json({ ok: false, data: null, error: { code: "FORBIDDEN", message: "You may only edit your own municipality" } });
+      return;
+    }
+
+    const body = req.body ?? {};
+    const patch = isOperator
+      ? {
+          ...(body.name !== undefined && { name: body.name }),
+          ...(body.province !== undefined && { province: body.province }),
+          ...(body.brandColor !== undefined && { brandColor: body.brandColor }),
+          ...(body.logoUrl !== undefined && { logoUrl: body.logoUrl }),
+          ...(body.contactEmail !== undefined && { contactEmail: body.contactEmail }),
+          ...(body.contactPhone !== undefined && { contactPhone: body.contactPhone }),
+        }
+      : {
+          // Officials may update contact details for their own municipality
+          // only — not rename it, rebrand it, or reassign its tariffs.
+          ...(body.contactEmail !== undefined && { contactEmail: body.contactEmail }),
+          ...(body.contactPhone !== undefined && { contactPhone: body.contactPhone }),
+        };
+
+    if (Object.keys(patch).length === 0) {
+      // e.g. an official's body only touched fields they're not allowed to
+      // change — nothing survived the filter above. Drizzle's .set({})
+      // throws rather than no-opping, so this must be caught before that.
+      res.status(400).json({ ok: false, data: null, error: { code: "INVALID_REQUEST", message: "No editable fields were provided" } });
+      return;
+    }
+
+    const rows = await db.update(municipalities).set(patch).where(eq(municipalities.id, id)).returning();
+    if (!rows[0]) {
+      res.status(404).json({ ok: false, data: null, error: { code: "NOT_FOUND", message: "Municipality not found" } });
+      return;
+    }
+    res.json({ ok: true, data: rows[0], meta: { service: "gateway", tookMs: 0 } });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**
@@ -112,11 +196,24 @@ for (const route of routeMap) {
           proxyReq.setHeader("x-user-sub", user?.sub ?? "");
           proxyReq.setHeader("x-user-role", user?.role ?? "");
           proxyReq.setHeader("x-user-account", user?.accountNumber ?? "");
+          proxyReq.setHeader("x-user-persona", user?.persona ?? "");
+          proxyReq.setHeader("x-user-municipality", user?.municipalityId ?? "");
         },
       },
     }),
   );
 }
+
+// Final error-handling middleware — the safety net for any route above that
+// calls next(err), or any synchronous throw Express itself catches. Must be
+// registered last and take four arguments for Express to recognise it as
+// an error handler.
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("[gateway] unhandled route error:", err);
+  if (!res.headersSent) {
+    res.status(500).json({ ok: false, data: null, error: { code: "INTERNAL_ERROR", message: "Something went wrong" } });
+  }
+});
 
 app.listen(config.port, () => {
   console.log(`[gateway] listening on :${config.port}`);

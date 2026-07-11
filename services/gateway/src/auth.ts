@@ -9,6 +9,8 @@ export interface AuthedUser {
   accountNumber?: string;
   name?: string;
   persona?: string;
+  /** Present on official tokens: the one municipality they may act within. */
+  municipalityId?: string;
 }
 
 declare module "express-serve-static-core" {

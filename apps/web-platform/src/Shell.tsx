@@ -30,6 +30,7 @@ const SECTIONS: NavSection[] = [
       { to: "/campaigns", label: "Campaigns", icon: IC.campaign },
       { to: "/integrations", label: "Integrations", icon: IC.plug },
       { to: "/audit", label: "Audit Trail", icon: IC.shield },
+      { to: "/municipalities", label: "Municipalities", icon: IC.db },
     ],
   },
   {
@@ -52,6 +53,7 @@ const SECTIONS: NavSection[] = [
       { to: "/utilities/meters", label: "Meters", icon: IC.meter },
       { to: "/utilities/faults", label: "Faults", icon: IC.alert },
       { to: "/utilities/arrears", label: "Arrears", icon: IC.billing },
+      { to: "/utilities/settings", label: "Settings", icon: IC.settings },
     ],
   },
 ];

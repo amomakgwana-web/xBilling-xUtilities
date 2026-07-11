@@ -29,6 +29,15 @@ async function post(path, token, data) {
   return { status: res.status, body: await res.json() };
 }
 
+async function patch(path, token, data) {
+  const res = await fetch(`${API}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: data ? JSON.stringify(data) : undefined,
+  });
+  return { status: res.status, body: await res.json() };
+}
+
 test("login rejects wrong password", async () => {
   const { status, body } = await login("thandi.cele@example.co.za", "not-the-password");
   assert.equal(status, 401);
@@ -161,4 +170,58 @@ test("kyc checks are persisted", async () => {
 
   const checks = await get("/compliance/kyc/checks", token);
   assert.ok(checks.body.data.some((c) => c.idNumber === "9001019999087"));
+});
+
+test("operator sees every municipality; official sees only their own", async () => {
+  const { body: opAuth } = await login("operator@xplatform.co.za", "Operator!2026");
+  const opList = await get("/platform/municipalities", opAuth.data.token);
+  assert.equal(opList.status, 200);
+  assert.ok(opList.body.data.length >= 4);
+
+  const { body: offAuth } = await login("official@ekurhuleni.gov.za", "Official!2026");
+  assert.equal(offAuth.data.user.municipalityId, "Ekurhuleni");
+  const offList = await get("/platform/municipalities", offAuth.data.token);
+  assert.equal(offList.status, 200);
+  assert.deepEqual(offList.body.data.map((m) => m.id), ["Ekurhuleni"]);
+});
+
+test("an official's book is scoped to their own municipality, even with a query override", async () => {
+  const { body: offAuth } = await login("official@ekurhuleni.gov.za", "Official!2026");
+  const token = offAuth.data.token;
+
+  const accounts = await get("/billing/accounts?municipality=Tshwane", token);
+  assert.equal(accounts.status, 200);
+  for (const a of accounts.body.data) assert.equal(a.municipality, "Ekurhuleni");
+
+  const meters = await get("/metering/meters?municipality=CoJ", token);
+  assert.equal(meters.status, 200);
+  for (const m of meters.body.data) assert.equal(m.municipality, "Ekurhuleni");
+});
+
+test("an operator's book is unrestricted across municipalities", async () => {
+  const { body: opAuth } = await login("operator@xplatform.co.za", "Operator!2026");
+  const accounts = await get("/billing/accounts", opAuth.data.token);
+  const municipalitiesSeen = new Set(accounts.body.data.map((a) => a.municipality));
+  assert.ok(municipalitiesSeen.size > 1, "operator should see accounts across more than one municipality");
+});
+
+test("an official may edit their own municipality's contact details, not its branding or another's", async () => {
+  const { body: offAuth } = await login("official@ekurhuleni.gov.za", "Official!2026");
+  const token = offAuth.data.token;
+
+  const ok = await patch("/platform/municipalities/Ekurhuleni", token, { contactPhone: "+27 11 000 1111" });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.data.contactPhone, "+27 11 000 1111");
+
+  const otherMunicipality = await patch("/platform/municipalities/Tshwane", token, { contactPhone: "+27 12 000 0000" });
+  assert.equal(otherMunicipality.status, 403);
+
+  // Only forbidden fields in the body — must be rejected cleanly (400), not
+  // crash the gateway (this exact request took the whole process down
+  // before the empty-patch guard was added).
+  const onlyForbiddenFields = await patch("/platform/municipalities/Ekurhuleni", token, { brandColor: "#000000" });
+  assert.equal(onlyForbiddenFields.status, 400);
+
+  const stillUp = await get("/platform/municipalities", token);
+  assert.equal(stillUp.status, 200, "gateway must still be responding after a rejected patch");
 });

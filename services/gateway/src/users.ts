@@ -10,6 +10,7 @@ export interface PlatformUser {
   persona: "citizen" | "official" | "operator";
   role: "consumer" | "admin";
   accountNumber?: string;
+  municipalityId?: string;
 }
 
 export async function verifyCredentials(email: string, password: string): Promise<PlatformUser | null> {
@@ -29,5 +30,6 @@ export async function verifyCredentials(email: string, password: string): Promis
     persona: row.persona as PlatformUser["persona"],
     role: row.role as PlatformUser["role"],
     accountNumber: row.accountNumber ?? undefined,
+    municipalityId: row.municipalityId ?? undefined,
   };
 }

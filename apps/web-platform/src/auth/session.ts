@@ -11,6 +11,8 @@ export interface Session {
   name: string;
   /** Citizens are bound to their own billing account for the whole session. */
   accountNumber?: string;
+  /** Officials are bound to their own municipality for the whole session. */
+  municipalityId?: string;
 }
 
 const KEY = "xplatform.session";
