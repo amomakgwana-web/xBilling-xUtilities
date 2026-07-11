@@ -49,13 +49,14 @@ same way it would in production.
 
 Each service is backed by a real Postgres database — a Supabase project
 ("xBilling") with one **schema per service** (`billing`, `payments`,
-`metering`, `comms`, `compliance`), so the microservice data-ownership
-boundary holds even though it's physically one Postgres instance: no service
-queries another's tables directly, and no cross-schema foreign keys exist.
+`metering`, `comms`, `compliance`, plus `platform` for the gateway's
+`users` table), so the microservice data-ownership boundary holds even
+though it's physically one Postgres instance: no service queries another's
+tables directly, and no cross-schema foreign keys exist.
 
 Each service connects via [Drizzle ORM](https://orm.drizzle.team/)
 (`src/db/schema.ts` + `src/db/client.ts`) using a dedicated `app_service`
-Postgres role scoped to only those 5 schemas — not the Supabase project's
+Postgres role scoped to only those 6 schemas — not the Supabase project's
 superuser. Every service needs `DATABASE_URL` set (see each
 `services/*/.env.example`); get the `app_service` password from whoever
 provisioned the project, or rotate it via the Supabase SQL editor:
@@ -63,13 +64,11 @@ provisioned the project, or rotate it via the Supabase SQL editor:
 ALTER ROLE app_service WITH PASSWORD 'new-password-here';
 ```
 
-**Row Level Security is currently disabled** on all 14 tables. This is
-lower-risk than usual because they live in non-`public` schemas, which
-Supabase's auto-generated REST API doesn't expose unless you explicitly add
-them to the exposed-schema list — and nothing in this codebase does. If you
-ever query these tables via `supabase-js`/PostgREST from a browser (instead
-of the Drizzle connection these services use), enable RLS with policies
-first.
+**Row Level Security is enabled on all 19 tables**, each with one policy
+granting `app_service` unrestricted access — the only role any service
+connects as. No policy exists for the `anon`/`authenticated` PostgREST
+roles, so they default to denied; Supabase's security advisor reports zero
+lints. See `db/005_security_hardening.sql` for the exact policies.
 
 ## Business logic
 
