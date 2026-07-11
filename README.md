@@ -99,7 +99,7 @@ gateway now **enforces** the token on every proxied `/api/*` route:
 |-------------------|-----------------------------|
 | `/api/billing`     | consumer, admin, service     |
 | `/api/payments`    | consumer, admin, service     |
-| `/api/metering`    | admin, service               |
+| `/api/metering`    | consumer, admin, service     |
 | `/api/comms`       | admin, service               |
 | `/api/compliance`  | admin, service               |
 

@@ -39,6 +39,7 @@ const SECTIONS: NavSection[] = [
       { to: "/billing", label: "Dashboard", icon: IC.dash, end: true },
       { to: "/billing/invoices", label: "Invoices", icon: IC.billing },
       { to: "/billing/pay", label: "Pay Now", icon: IC.pay },
+      { to: "/billing/electricity", label: "Buy Electricity", icon: IC.bolt },
     ],
   },
   {
@@ -49,6 +50,7 @@ const SECTIONS: NavSection[] = [
       { to: "/utilities", label: "Overview", icon: IC.dash, end: true },
       { to: "/utilities/meters", label: "Meters", icon: IC.meter },
       { to: "/utilities/faults", label: "Faults", icon: IC.alert },
+      { to: "/utilities/arrears", label: "Arrears", icon: IC.billing },
     ],
   },
 ];

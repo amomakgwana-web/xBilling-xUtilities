@@ -41,13 +41,14 @@ app.post("/api/auth/dev-login", express.json(), (req, res) => {
 
 /**
  * Every proxied domain requires a valid platform JWT. Consumers (citizens
- * signed into the unified console) may reach billing and payments for
- * self-service; the operational domains are admin/service only.
+ * signed into the unified console) may reach billing, payments and metering
+ * for self-service (statements, pay-now, prepaid token purchase); comms and
+ * compliance are admin/service only.
  */
 const routeMap: Array<{ path: string; target: string; roles: Array<AuthedUser["role"]> }> = [
   { path: "/api/billing", target: config.services.billing, roles: ["consumer", "admin", "service"] },
   { path: "/api/payments", target: config.services.payments, roles: ["consumer", "admin", "service"] },
-  { path: "/api/metering", target: config.services.metering, roles: ["admin", "service"] },
+  { path: "/api/metering", target: config.services.metering, roles: ["consumer", "admin", "service"] },
   { path: "/api/comms", target: config.services.comms, roles: ["admin", "service"] },
   { path: "/api/compliance", target: config.services.compliance, roles: ["admin", "service"] },
 ];
