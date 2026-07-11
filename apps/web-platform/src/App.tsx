@@ -9,6 +9,7 @@ import { CommandCentre } from "./pages/xlayer/CommandCentre";
 import { Payments } from "./pages/xlayer/Payments";
 import { Campaigns } from "./pages/xlayer/Campaigns";
 import { Integrations } from "./pages/xlayer/Integrations";
+import { Audit } from "./pages/xlayer/Audit";
 import { BillingDashboard } from "./pages/billing/Dashboard";
 import { Invoices } from "./pages/billing/Invoices";
 import { Pay } from "./pages/billing/Pay";
@@ -44,6 +45,7 @@ function Routed() {
                   <Route path="/payments" element={<Area area="xlayer"><Payments /></Area>} />
                   <Route path="/campaigns" element={<Area area="xlayer"><Campaigns /></Area>} />
                   <Route path="/integrations" element={<Area area="xlayer"><Integrations /></Area>} />
+                  <Route path="/audit" element={<Area area="xlayer"><Audit /></Area>} />
                   <Route path="/billing" element={<Area area="billing"><BillingDashboard /></Area>} />
                   <Route path="/billing/invoices" element={<Area area="billing"><Invoices /></Area>} />
                   <Route path="/billing/pay" element={<Area area="billing"><Pay /></Area>} />

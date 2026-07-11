@@ -14,7 +14,20 @@ export const accounts = billingSchema.table("accounts", {
   balance: numeric("balance").notNull().default("0"),
   status: text("status").notNull(),
   tariffCode: text("tariff_code").notNull(),
+  email: text("email"),
+  phone: text("phone"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Municipal tariff book — rates the billing engine applies per account. */
+export const tariffs = billingSchema.table("tariffs", {
+  code: text("code").primaryKey(),
+  description: text("description").notNull(),
+  electricityPerKwh: numeric("electricity_per_kwh").notNull(),
+  waterPerKl: numeric("water_per_kl").notNull(),
+  refuseMonthly: numeric("refuse_monthly").notNull(),
+  sewerMonthly: numeric("sewer_monthly").notNull(),
+  vatRate: numeric("vat_rate").notNull().default("0.15"),
 });
 
 export const invoices = billingSchema.table("invoices", {

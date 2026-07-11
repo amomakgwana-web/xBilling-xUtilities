@@ -10,9 +10,22 @@ export const AccountSchema = z.object({
   balance: z.number(),
   status: StatusSchema,
   tariffCode: z.string(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
   createdAt: z.string(),
 });
 export type Account = z.infer<typeof AccountSchema>;
+
+export const TariffSchema = z.object({
+  code: z.string(),
+  description: z.string(),
+  electricityPerKwh: z.number(),
+  waterPerKl: z.number(),
+  refuseMonthly: z.number(),
+  sewerMonthly: z.number(),
+  vatRate: z.number(),
+});
+export type Tariff = z.infer<typeof TariffSchema>;
 
 export const InvoiceLineSchema = z.object({
   description: z.string(),

@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
-import type { Account, BillingRun, Invoice, Municipality } from "@xplatform/shared-types";
+import type { Account, BillingRun, Invoice, Municipality, Tariff } from "@xplatform/shared-types";
 import { db } from "./db/client.js";
-import { accounts, billingRuns, invoices } from "./db/schema.js";
+import { accounts, billingRuns, invoiceLines, invoices, tariffs } from "./db/schema.js";
 
 type AccountRow = typeof accounts.$inferSelect;
 type BillingRunRow = typeof billingRuns.$inferSelect;
@@ -19,6 +19,8 @@ function toAccount(row: AccountRow): Account {
     balance: Number(row.balance),
     status: row.status as Account["status"],
     tariffCode: row.tariffCode,
+    email: row.email ?? undefined,
+    phone: row.phone ?? undefined,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -109,6 +111,61 @@ export async function applyPaymentToInvoice(id: string, amount: number): Promise
   await adjustAccountBalance(invoice.accountNumber, amount);
 
   return getInvoiceById(id);
+}
+
+export async function getTariff(code: string): Promise<Tariff | null> {
+  const rows = await db.select().from(tariffs).where(eq(tariffs.code, code)).limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    code: row.code,
+    description: row.description,
+    electricityPerKwh: Number(row.electricityPerKwh),
+    waterPerKl: Number(row.waterPerKl),
+    refuseMonthly: Number(row.refuseMonthly),
+    sewerMonthly: Number(row.sewerMonthly),
+    vatRate: Number(row.vatRate),
+  };
+}
+
+/** Invoice + lines + balance increase, atomically — one billed account per transaction. */
+export async function createInvoiceWithLines(
+  invoice: Omit<Invoice, "lines">,
+  lines: Invoice["lines"],
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.insert(invoices).values({
+      id: invoice.id,
+      accountId: invoice.accountId,
+      accountNumber: invoice.accountNumber,
+      billingPeriod: invoice.billingPeriod,
+      issueDate: invoice.issueDate,
+      dueDate: invoice.dueDate,
+      totalAmount: String(invoice.totalAmount),
+      amountPaid: String(invoice.amountPaid),
+      status: invoice.status,
+    });
+    if (lines.length) {
+      await tx.insert(invoiceLines).values(
+        lines.map((l) => ({
+          invoiceId: invoice.id,
+          description: l.description,
+          category: l.category,
+          quantity: String(l.quantity),
+          unitPrice: String(l.unitPrice),
+          amount: String(l.amount),
+        })),
+      );
+    }
+    const accountRows = await tx.select().from(accounts).where(eq(accounts.accountNumber, invoice.accountNumber)).limit(1);
+    if (accountRows[0]) {
+      const balance = Number(accountRows[0].balance) + invoice.totalAmount;
+      await tx
+        .update(accounts)
+        .set({ balance: String(balance), status: balance > 0 ? "pending" : accountRows[0].status })
+        .where(eq(accounts.accountNumber, invoice.accountNumber));
+    }
+  });
 }
 
 export async function listBillingRuns(): Promise<BillingRun[]> {

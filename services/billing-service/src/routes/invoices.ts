@@ -1,12 +1,16 @@
 import { Router } from "express";
+import { callerFrom, forbidForeignAccount } from "../identity.js";
 import { applyPaymentToInvoice, getInvoiceById, listInvoices } from "../repository.js";
 
 export const invoicesRouter: Router = Router();
 
 invoicesRouter.get("/", async (req, res) => {
+  const caller = callerFrom(req);
   const { accountNumber, status } = req.query;
   const result = await listInvoices({
-    accountNumber: typeof accountNumber === "string" ? accountNumber : undefined,
+    // Consumers always get their own invoices, whatever the query says.
+    accountNumber:
+      caller.role === "consumer" ? caller.accountNumber : typeof accountNumber === "string" ? accountNumber : undefined,
     status: typeof status === "string" ? status : undefined,
   });
   res.json({ ok: true, data: result, meta: { service: "billing-service", tookMs: 0 } });
@@ -18,6 +22,7 @@ invoicesRouter.get("/:id", async (req, res) => {
     res.status(404).json({ ok: false, data: null, error: { code: "NOT_FOUND", message: "Invoice not found" } });
     return;
   }
+  if (forbidForeignAccount(req, res, invoice.accountNumber)) return;
   res.json({ ok: true, data: invoice, meta: { service: "billing-service", tookMs: 0 } });
 });
 

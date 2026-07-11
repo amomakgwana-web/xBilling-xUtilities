@@ -14,7 +14,8 @@ services:
     environment:
       PORT: 4001
       CORS_ORIGIN: "*"
-      # Set DATABASE_URL in a root .env (gitignored) — same value for all 5
+      METERING_SERVICE_URL: http://metering-service:4003
+      # Set DATABASE_URL in a root .env (gitignored) — same value for all
       # services, pointed at the shared Supabase project via the
       # least-privilege `app_service` role. See README.md > Persistence.
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required — see README.md > Persistence}
@@ -91,6 +92,7 @@ services:
       PORT: 4000
       JWT_SECRET: dev-secret-change-me
       CORS_ORIGIN: "http://localhost:5173"
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required — see README.md > Persistence}
       BILLING_SERVICE_URL: http://billing-service:4001
       PAYMENTS_SERVICE_URL: http://payments-service:4002
       METERING_SERVICE_URL: http://metering-service:4003

@@ -5,6 +5,10 @@ import { config } from "./config.js";
 export interface AuthedUser {
   sub: string;
   role: "consumer" | "admin" | "service";
+  /** Present on consumer tokens: the one billing account this citizen owns. */
+  accountNumber?: string;
+  name?: string;
+  persona?: string;
 }
 
 declare module "express-serve-static-core" {
@@ -14,10 +18,11 @@ declare module "express-serve-static-core" {
 }
 
 /**
- * Dev-mode gateway auth: issues/validates short-lived JWTs signed with a
- * local secret. Swap for a real IdP (Auth0/Cognito/Keycloak) by replacing
- * `issueToken` and the verify call below — downstream services only ever
- * see the decoded `req.user`, never the raw credential.
+ * Gateway-issued short-lived JWTs, minted only after a bcrypt-verified
+ * email+password login against platform.users. Downstream services never
+ * see the credential — the gateway forwards the verified identity as
+ * x-user-* headers, which is why services must only be reachable through
+ * the gateway's network.
  */
 export function issueToken(user: AuthedUser): string {
   return jwt.sign(user, config.jwtSecret, { expiresIn: "12h" });

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { PaymentInitiationRequestSchema, type PaymentInitiationRequest, type PaymentTransaction } from "@xplatform/shared-types";
 import { SwiftPayAdapter, CapitecPayAdapter, WhatsAppPayAdapter, SamsungPayAdapter, platformEventBus, IntegrationError } from "@xplatform/integrations";
+import { forbidForeignAccount } from "../identity.js";
 import { insertTransaction } from "../repository.js";
 import { applyPaymentToOldestInvoice } from "../billingClient.js";
 
@@ -18,6 +19,7 @@ initiateRouter.post("/", async (req, res) => {
     return;
   }
   const { accountNumber, amount, method } = parsed.data;
+  if (forbidForeignAccount(req, res, accountNumber)) return;
 
   try {
     const gatewayResult = await routeToGateway(method, parsed.data);

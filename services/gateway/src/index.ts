@@ -5,6 +5,7 @@ import { createProxyMiddleware } from "http-proxy-middleware";
 import { config } from "./config.js";
 import { issueToken, requireAuth, requireRole, type AuthedUser } from "./auth.js";
 import { getPlatformStatus } from "./platformStatus.js";
+import { verifyCredentials } from "./users.js";
 
 const app = express();
 app.use(cors({ origin: config.corsOrigin }));
@@ -25,18 +26,35 @@ app.get("/api/platform/status", async (_req, res) => {
 });
 
 /**
- * Dev-only login: issues a JWT for any of the three role personas without a
- * real identity provider. Replace with a real auth flow before production —
- * downstream routing and RBAC are already shaped around `req.user`.
+ * Real login: email + password verified with bcrypt against platform.users.
+ * Provisioned identities only — there is deliberately no self-signup for a
+ * municipal billing platform.
  */
-app.post("/api/auth/dev-login", express.json(), (req, res) => {
-  const role = (req.body?.role as string) ?? "consumer";
-  if (!["consumer", "admin", "service"].includes(role)) {
-    res.status(400).json({ ok: false, data: null, error: { code: "INVALID_ROLE", message: "role must be consumer, admin or service" } });
+app.post("/api/auth/login", express.json(), async (req, res) => {
+  const { email, password } = req.body ?? {};
+  if (typeof email !== "string" || typeof password !== "string" || !email || !password) {
+    res.status(400).json({ ok: false, data: null, error: { code: "INVALID_REQUEST", message: "email and password are required" } });
     return;
   }
-  const token = issueToken({ sub: req.body?.sub ?? "demo-user", role: role as "consumer" | "admin" | "service" });
-  res.json({ ok: true, data: { token } });
+  const user = await verifyCredentials(email, password);
+  if (!user) {
+    res.status(401).json({ ok: false, data: null, error: { code: "INVALID_CREDENTIALS", message: "Email or password is incorrect" } });
+    return;
+  }
+  const token = issueToken({
+    sub: user.id,
+    role: user.role,
+    accountNumber: user.accountNumber,
+    name: user.name,
+    persona: user.persona,
+  });
+  res.json({
+    ok: true,
+    data: {
+      token,
+      user: { name: user.name, email: user.email, persona: user.persona, accountNumber: user.accountNumber },
+    },
+  });
 });
 
 /**
@@ -53,15 +71,49 @@ const routeMap: Array<{ path: string; target: string; roles: Array<AuthedUser["r
   { path: "/api/compliance", target: config.services.compliance, roles: ["admin", "service"] },
 ];
 
+/**
+ * Fire-and-forget audit of every authenticated mutating request, written to
+ * compliance-service's hash-chained audit log. Failures never block the
+ * request — the platform must not go down because auditing is degraded.
+ */
+function auditMutation(req: express.Request): void {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return;
+  void fetch(`${config.services.compliance}/audit/events`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      actor: req.user?.sub ?? "anonymous",
+      actorName: req.user?.name,
+      role: req.user?.role,
+      action: `${req.method} ${req.baseUrl}${req.path}`,
+      target: req.user?.accountNumber ?? null,
+    }),
+  }).catch(() => undefined);
+}
+
 for (const route of routeMap) {
   app.use(
     route.path,
     requireAuth,
     requireRole(...route.roles),
+    (req, _res, next) => {
+      auditMutation(req);
+      next();
+    },
     createProxyMiddleware({
       target: route.target,
       changeOrigin: true,
       pathRewrite: { [`^${route.path}`]: "" },
+      on: {
+        proxyReq: (proxyReq, req) => {
+          // Forward the gateway-verified identity; never trust these headers
+          // from the client (they are overwritten unconditionally).
+          const user = (req as express.Request).user;
+          proxyReq.setHeader("x-user-sub", user?.sub ?? "");
+          proxyReq.setHeader("x-user-role", user?.role ?? "");
+          proxyReq.setHeader("x-user-account", user?.accountNumber ?? "");
+        },
+      },
     }),
   );
 }

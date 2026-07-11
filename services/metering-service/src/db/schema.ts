@@ -1,4 +1,4 @@
-import { pgSchema, text, numeric, timestamp } from "drizzle-orm/pg-core";
+import { pgSchema, text, numeric, timestamp, bigint } from "drizzle-orm/pg-core";
 
 export const meteringSchema = pgSchema("metering");
 
@@ -13,6 +13,20 @@ export const meters = meteringSchema.table("meters", {
   lastReading: numeric("last_reading").notNull().default("0"),
   lastReadingAt: timestamp("last_reading_at", { withTimezone: true }).notNull().defaultNow(),
   status: text("status").notNull(),
+});
+
+/**
+ * Full reading history — the billing engine derives consumption from the
+ * delta between the two most recent readings per meter.
+ */
+export const meterReadings = meteringSchema.table("readings", {
+  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+  meterId: text("meter_id")
+    .notNull()
+    .references(() => meters.id),
+  serial: text("serial").notNull(),
+  reading: numeric("reading").notNull(),
+  readAt: timestamp("read_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const meterFaults = meteringSchema.table("meter_faults", {

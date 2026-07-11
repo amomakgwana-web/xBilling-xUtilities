@@ -1,5 +1,8 @@
 import { Router } from "express";
+import { desc } from "drizzle-orm";
 import { HANISAdapter, SARSAdapter, TransUnionAdapter, DeedsRegistryAdapter } from "@xplatform/integrations";
+import { db } from "../db/client.js";
+import { kycChecks } from "../db/schema.js";
 
 export const kycRouter: Router = Router();
 
@@ -22,9 +25,39 @@ kycRouter.post("/verify", async (req, res) => {
     erfNumber ? deeds.verifyOwnership(erfNumber, idNumber) : Promise.resolve(null),
   ]);
 
+  const results = [identity.result, taxClearance.result, credit.result, ...(ownership ? [ownership.result] : [])];
+  const outcome = results.every((r) => r === "verified") ? "verified" : "review";
+  const detail = { identity, taxClearance, credit, ownership };
+
+  // POPIA: every identity check is recorded, whatever its outcome.
+  await db.insert(kycChecks).values({
+    idNumber,
+    erfNumber: erfNumber ?? null,
+    requestedBy: req.header("x-user-sub") ?? "unknown",
+    outcome,
+    detail,
+  });
+
   res.json({
     ok: true,
-    data: { identity, taxClearance, credit, ownership },
+    data: { outcome, ...detail },
+    meta: { service: "compliance-service", tookMs: 0 },
+  });
+});
+
+kycRouter.get("/checks", async (req, res) => {
+  const limit = Math.min(Number(req.query.limit ?? 50) || 50, 200);
+  const rows = await db.select().from(kycChecks).orderBy(desc(kycChecks.id)).limit(limit);
+  res.json({
+    ok: true,
+    data: rows.map((r) => ({
+      id: r.id,
+      idNumber: r.idNumber,
+      erfNumber: r.erfNumber ?? undefined,
+      requestedBy: r.requestedBy,
+      outcome: r.outcome,
+      createdAt: r.createdAt.toISOString(),
+    })),
     meta: { service: "compliance-service", tookMs: 0 },
   });
 });

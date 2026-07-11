@@ -71,6 +71,23 @@ ever query these tables via `supabase-js`/PostgREST from a browser (instead
 of the Drizzle connection these services use), enable RLS with policies
 first.
 
+## Business logic
+
+Billing is computed, not seeded: `POST /api/billing/billing-runs` pulls
+per-meter consumption from metering-service (the delta of the two most
+recent readings in `metering.readings`), prices it with the account's
+tariff from `billing.tariffs` (SA-style rates: R/kWh, R/kl, fixed
+refuse/sewer charges), adds 15% VAT, and writes invoice + lines + balance
+atomically per account. Re-running a period never double-bills. Prepaid
+electricity is excluded from statements (paid at vend time). Reconciliation
+has a real matching pass too: `POST /api/payments/recon/run` applies each
+suspense transaction to its account's oldest open invoice over
+billing-service's HTTP API and posts it. Every KYC verification is
+persisted to `compliance.kyc_checks` (POPIA requires the record to exist).
+
+The SQL for all of this lives in `db/00*.sql`, applied in order — both the
+Supabase project and CI's throwaway Postgres run the identical files.
+
 ## What's mocked vs real
 
 Every third-party integration named in the original product mockups
@@ -81,19 +98,39 @@ response shapes, no real credentials or network calls. Swap a mock adapter's
 internals for a real HTTP client when you have production credentials — the
 public method signatures are designed not to need to change.
 
-The one genuinely optional live integration is the Claude-powered "AI
-Insight" / SMS-drafting feature in `comms-service`. It calls the Anthropic
-API server-side (never from the browser) only if `ANTHROPIC_API_KEY` is set
-on `comms-service`; otherwise every caller gets a deterministic canned
-response instead of an error.
+Three integrations go **live** the moment a key lands in `comms-service`'s
+environment, with the mock as fallback otherwise:
+- **Email** — set `RESEND_API_KEY` (and optionally `RESEND_FROM`) and
+  campaign email goes out through the Resend API for real.
+- **SMS** — set `BULKSMS_TOKEN_ID` + `BULKSMS_TOKEN_SECRET` and campaign /
+  arrears-reminder SMS dispatches through the BulkSMS JSON API to the real
+  MSISDNs stored on `billing.accounts`.
+- **AI Insight / SMS drafting** — set `ANTHROPIC_API_KEY` for live Claude
+  analysis; a deterministic canned response otherwise.
+
+The payment rails (SwiftPay, Capitec Pay, …), Conlog token vending, and the
+government KYC endpoints (HANIS, SARS, TransUnion, Deeds) remain mock
+adapters — those require signed merchant/government agreements that only
+the business can obtain; the adapters' method signatures are shaped so only
+their bodies change when credentials exist.
 
 ## Auth
 
-Sign-in is unified: the console's login screen calls the gateway's dev-mode
-JWT issuer (`POST /api/auth/dev-login`) with one of three personas —
-**Citizen** (role `consumer`, bound to their own billing account),
-**Municipal Official** and **Platform Operator** (both role `admin`). The
-gateway now **enforces** the token on every proxied `/api/*` route:
+Sign-in is real: `POST /api/auth/login` verifies email + password with
+bcrypt against `platform.users` (provisioned identities — deliberately no
+public self-signup for a municipal platform) and issues a short-lived JWT.
+Citizens are **bound to their own billing account in the token**: the
+gateway forwards the verified identity to services as `x-user-*` headers
+(overwritten unconditionally, never trusted from the client) and every
+service enforces ownership — a citizen who requests another account's
+statement, meter, or payment gets a 403 no matter what URL or query
+parameters they craft.
+
+Demo identities (see `db/004_seed_real.sql`): `operator@xplatform.co.za` /
+`Operator!2026`, `official@ekurhuleni.gov.za` / `Official!2026`, and five
+citizens (e.g. `thandi.cele@example.co.za`) all with `Citizen!2026`.
+
+The gateway enforces the token on every proxied `/api/*` route:
 
 | Route            | Allowed roles              |
 |-------------------|-----------------------------|
@@ -103,10 +140,12 @@ gateway now **enforces** the token on every proxied `/api/*` route:
 | `/api/comms`       | admin, service               |
 | `/api/compliance`  | admin, service               |
 
-`/api/auth/dev-login` and `/api/platform/status` stay open. The frontend
+`/api/auth/login` and `/api/platform/status` stay open. The frontend
 attaches the token to every call and returns the user to the login screen
-on a 401. Replace `services/gateway/src/auth.ts` with a real IdP before
-production — the RBAC shape is already in place around `req.user`.
+on a 401. Every authenticated **mutating** request is also written
+(fire-and-forget) to a hash-chained, tamper-evident audit log in
+compliance-service — `GET /api/compliance/audit/verify` recomputes the
+whole chain and reports exactly where it breaks if any row was altered.
 
 ## Running locally
 
@@ -207,6 +246,16 @@ gateway auth enforcement:
     only the xBilling section, gets bounced from deep-links to other areas,
     and completed a pay-now flow; official sign-in has only the xUtilities
     section and vended a prepaid token. Screenshots taken at every step.
+
+## Tests & CI
+
+`pnpm test` runs 12 integration tests (`tests/integration.test.mjs`,
+node:test, no test-framework dependency) against a running stack: the
+login/ownership security matrix, the cross-service payment settlement, the
+billing engine's tariff+VAT maths and double-billing guard, audit-chain
+integrity, and KYC persistence. `.github/workflows/ci.yml` runs the same
+suite on every PR: it boots a throwaway Postgres 16, applies `db/00*.sql`,
+builds the workspace, starts all six services, and runs the tests.
 
 ## What's next
 

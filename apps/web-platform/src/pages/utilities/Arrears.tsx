@@ -58,7 +58,9 @@ export function Arrears() {
         name: `Arrears reminder — ${new Date().toISOString().slice(0, 10)}`,
         type: "SMS",
         municipality: "All",
-        recipients: rows.map((r) => r.accountNumber),
+        // Real MSISDNs from the billing accounts — live SMS when the comms
+        // gateway has BulkSMS credentials, mock queue otherwise.
+        recipients: rows.map((r) => r.phone ?? r.accountNumber),
         message: "Your municipal account is in arrears. Pay via the xBilling portal, EFT or USSD *120# to avoid interruption.",
       });
       setSent(campaign);

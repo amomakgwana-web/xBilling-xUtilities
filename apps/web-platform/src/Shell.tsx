@@ -29,6 +29,7 @@ const SECTIONS: NavSection[] = [
       { to: "/payments", label: "Payments", icon: IC.pay },
       { to: "/campaigns", label: "Campaigns", icon: IC.campaign },
       { to: "/integrations", label: "Integrations", icon: IC.plug },
+      { to: "/audit", label: "Audit Trail", icon: IC.shield },
     ],
   },
   {

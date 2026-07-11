@@ -43,6 +43,7 @@ Domain" on this one only):
 PORT=4000
 JWT_SECRET=<generate a real secret, not the local dev one>
 CORS_ORIGIN=https://<your-web-platform-domain>
+DATABASE_URL=<same Supabase app_service URL as the other services — the gateway reads platform.users for login>
 BILLING_SERVICE_URL=http://billing-service.railway.internal:4001
 PAYMENTS_SERVICE_URL=http://payments-service.railway.internal:4002
 METERING_SERVICE_URL=http://metering-service.railway.internal:4003

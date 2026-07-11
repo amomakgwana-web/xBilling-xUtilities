@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { Meter, MeterFault, MeterType, Municipality } from "@xplatform/shared-types";
 import { db } from "./db/client.js";
-import { meterFaults, meters } from "./db/schema.js";
+import { meterFaults, meterReadings, meters } from "./db/schema.js";
 
 type MeterRow = typeof meters.$inferSelect;
 type MeterFaultRow = typeof meterFaults.$inferSelect;
@@ -53,7 +53,57 @@ export async function updateMeterReading(serial: string, reading: number, readAt
     .set({ lastReading: String(reading), lastReadingAt: new Date(readAt) })
     .where(eq(meters.serial, serial))
     .returning();
-  return rows[0] ? toMeter(rows[0]) : null;
+  if (!rows[0]) return null;
+  // Keep the full history — consumption billing reads the last two entries.
+  await db.insert(meterReadings).values({
+    meterId: rows[0].id,
+    serial,
+    reading: String(reading),
+    readAt: new Date(readAt),
+  });
+  return toMeter(rows[0]);
+}
+
+export interface MeterConsumption {
+  serial: string;
+  accountNumber: string;
+  municipality: string;
+  type: MeterType;
+  /** Units used between the two most recent readings (kWh or kl). */
+  consumption: number;
+  periodStart: string | null;
+  periodEnd: string | null;
+}
+
+/**
+ * Consumption per meter derived from the reading history: the delta between
+ * the two most recent readings (0 when fewer than two readings exist —
+ * nothing measurable to bill yet).
+ */
+export async function consumptionByMunicipality(municipality?: string): Promise<MeterConsumption[]> {
+  const allMeters = await listMeters({ municipality });
+  const result: MeterConsumption[] = [];
+  for (const meter of allMeters) {
+    const last2 = await db
+      .select()
+      .from(meterReadings)
+      .where(eq(meterReadings.serial, meter.serial))
+      .orderBy(desc(meterReadings.id))
+      .limit(2);
+    const [latest, previous] = last2;
+    const consumption =
+      latest && previous ? Math.max(0, Number(latest.reading) - Number(previous.reading)) : 0;
+    result.push({
+      serial: meter.serial,
+      accountNumber: meter.accountNumber,
+      municipality: meter.municipality,
+      type: meter.type,
+      consumption,
+      periodStart: previous ? previous.readAt.toISOString() : null,
+      periodEnd: latest ? latest.readAt.toISOString() : null,
+    });
+  }
+  return result;
 }
 
 export async function setMeterStatus(id: string, status: string): Promise<void> {
