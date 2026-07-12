@@ -53,3 +53,16 @@ export const PaymentInitiationRequestSchema = z.object({
   method: PaymentMethodIdSchema,
 });
 export type PaymentInitiationRequest = z.infer<typeof PaymentInitiationRequestSchema>;
+
+export const PaymentPlanSchema = z.object({
+  id: z.string(),
+  accountNumber: z.string(),
+  consumerName: z.string(),
+  totalAmount: z.number(),
+  installments: z.number(),
+  installmentAmount: z.number(),
+  startDate: z.string(),
+  status: z.enum(["active", "completed", "cancelled"]),
+  createdAt: z.string(),
+});
+export type PaymentPlan = z.infer<typeof PaymentPlanSchema>;

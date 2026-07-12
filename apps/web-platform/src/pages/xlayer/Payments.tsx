@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { DebiCheckMandate, PaymentMethod, PaymentTransaction } from "@xplatform/shared-types";
+import type { DebiCheckMandate, PaymentMethod, PaymentPlan, PaymentTransaction } from "@xplatform/shared-types";
 import { T, IC, Card, CH, Tab, TRow, SectionTitle, Badge, Btn, LoadingState, ErrorState, fmtN, fmtR } from "@xplatform/ui-kit";
 import { api } from "../../api";
 
@@ -8,6 +8,7 @@ export function Payments() {
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [recon, setRecon] = useState<PaymentTransaction[]>([]);
   const [mandates, setMandates] = useState<DebiCheckMandate[]>([]);
+  const [plans, setPlans] = useState<PaymentPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -18,11 +19,13 @@ export function Payments() {
       api.get<PaymentMethod[]>("/payments/methods"),
       api.get<PaymentTransaction[]>("/payments/recon"),
       api.get<DebiCheckMandate[]>("/payments/debicheck/mandates"),
+      api.get<PaymentPlan[]>("/payments/plans"),
     ])
-      .then(([m, r, d]) => {
+      .then(([m, r, d, p]) => {
         setMethods(m);
         setRecon(r);
         setMandates(d);
+        setPlans(p);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load payments data"))
       .finally(() => setLoading(false));
@@ -46,6 +49,7 @@ export function Payments() {
           { id: "methods", label: "Payment Methods", icon: IC.pay },
           { id: "recon", label: "Reconciliation", icon: IC.recon },
           { id: "debi", label: "DebiCheck", icon: IC.billing },
+          { id: "plans", label: "Payment Plans", icon: IC.billing },
         ]}
         active={tab}
         onChange={setTab}
@@ -127,6 +131,40 @@ export function Payments() {
                     <td style={{ padding: "10px 14px" }}><Badge v={m.status} /></td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {tab === "plans" && (
+        <Card>
+          <CH
+            title="Self-Service Payment Plans"
+            sub="Instalment arrangements set up by consumers"
+            icon={IC.billing}
+            right={<div style={{ fontSize: 11, color: T.green, fontWeight: 700 }}>{plans.filter((p) => p.status === "active").length} active</div>}
+          />
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <TRow cols={["Plan", "Account", "Consumer", "Total", "Instalment", "Started", "Status"]} />
+              <tbody>
+                {plans.map((p) => (
+                  <tr key={p.id} style={{ borderBottom: `1px solid ${T.g700}` }}>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 11, color: T.brand }}>{p.id}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 11, color: T.g200, fontFamily: "monospace" }}>{p.accountNumber}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12, color: T.white2 }}>{p.consumerName}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12, fontWeight: 700, color: T.white }}>{fmtR(p.totalAmount)}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 11, color: T.g200 }}>{fmtR(p.installmentAmount)}/mo × {p.installments}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 11, color: T.g200 }}>{p.startDate}</td>
+                    <td style={{ padding: "10px 14px" }}><Badge v={p.status} /></td>
+                  </tr>
+                ))}
+                {plans.length === 0 && (
+                  <tr>
+                    <td colSpan={7} style={{ padding: 18, fontSize: 12, color: T.g200 }}>No payment plans yet.</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

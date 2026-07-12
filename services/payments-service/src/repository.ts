@@ -1,11 +1,12 @@
 import { desc, eq } from "drizzle-orm";
-import type { DebiCheckMandate, PaymentMethod, PaymentMethodId, PaymentTransaction } from "@xplatform/shared-types";
+import type { DebiCheckMandate, PaymentMethod, PaymentMethodId, PaymentPlan, PaymentTransaction } from "@xplatform/shared-types";
 import { db } from "./db/client.js";
-import { debiCheckMandates, paymentMethods, transactions } from "./db/schema.js";
+import { debiCheckMandates, paymentMethods, paymentPlans, transactions } from "./db/schema.js";
 
 type PaymentMethodRow = typeof paymentMethods.$inferSelect;
 type TransactionRow = typeof transactions.$inferSelect;
 type MandateRow = typeof debiCheckMandates.$inferSelect;
+type PaymentPlanRow = typeof paymentPlans.$inferSelect;
 
 function toMethod(row: PaymentMethodRow): PaymentMethod {
   return {
@@ -79,4 +80,53 @@ export async function insertTransaction(tx: PaymentTransaction): Promise<void> {
 export async function listDebiCheckMandates(): Promise<DebiCheckMandate[]> {
   const rows = await db.select().from(debiCheckMandates);
   return rows.map(toMandate);
+}
+
+function toPaymentPlan(row: PaymentPlanRow): PaymentPlan {
+  return {
+    id: row.id,
+    accountNumber: row.accountNumber,
+    consumerName: row.consumerName,
+    totalAmount: Number(row.totalAmount),
+    installments: row.installments,
+    installmentAmount: Number(row.installmentAmount),
+    startDate: row.startDate,
+    status: row.status as PaymentPlan["status"],
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+let planSeq = 100;
+
+export async function listPaymentPlans(filters: { accountNumber?: string }): Promise<PaymentPlan[]> {
+  const rows = filters.accountNumber
+    ? await db.select().from(paymentPlans).where(eq(paymentPlans.accountNumber, filters.accountNumber)).orderBy(desc(paymentPlans.createdAt))
+    : await db.select().from(paymentPlans).orderBy(desc(paymentPlans.createdAt));
+  return rows.map(toPaymentPlan);
+}
+
+export async function createPaymentPlan(input: {
+  accountNumber: string;
+  consumerName: string;
+  totalAmount: number;
+  installments: number;
+}): Promise<PaymentPlan> {
+  const id = `PLN-${planSeq++}`;
+  const installmentAmount = Math.round((input.totalAmount / input.installments) * 100) / 100;
+  const rows = await db
+    .insert(paymentPlans)
+    .values({
+      id,
+      accountNumber: input.accountNumber,
+      consumerName: input.consumerName,
+      totalAmount: String(input.totalAmount),
+      installments: input.installments,
+      installmentAmount: String(installmentAmount),
+      startDate: new Date().toISOString().slice(0, 10),
+      status: "active",
+    })
+    .returning();
+  const row = rows[0];
+  if (!row) throw new Error("Failed to create payment plan");
+  return toPaymentPlan(row);
 }

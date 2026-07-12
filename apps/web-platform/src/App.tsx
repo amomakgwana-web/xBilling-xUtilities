@@ -15,10 +15,16 @@ import { BillingDashboard } from "./pages/billing/Dashboard";
 import { Invoices } from "./pages/billing/Invoices";
 import { Pay } from "./pages/billing/Pay";
 import { BuyElectricity } from "./pages/billing/BuyElectricity";
+import { BankingDetails } from "./pages/billing/BankingDetails";
+import { PaymentPlans } from "./pages/billing/PaymentPlans";
+import { IndigentSubsidy } from "./pages/billing/IndigentSubsidy";
+import { Disputes as CitizenDisputes } from "./pages/billing/Disputes";
 import { UtilitiesDashboard } from "./pages/utilities/Dashboard";
 import { Meters } from "./pages/utilities/Meters";
 import { Faults } from "./pages/utilities/Faults";
 import { Arrears } from "./pages/utilities/Arrears";
+import { Subsidy } from "./pages/utilities/Subsidy";
+import { Disputes as OfficialDisputes } from "./pages/utilities/Disputes";
 import { Settings } from "./pages/utilities/Settings";
 
 /** Route guard: requires a session AND that the persona may see this area. */
@@ -53,10 +59,16 @@ function Routed() {
                   <Route path="/billing/invoices" element={<Area area="billing"><Invoices /></Area>} />
                   <Route path="/billing/pay" element={<Area area="billing"><Pay /></Area>} />
                   <Route path="/billing/electricity" element={<Area area="billing"><BuyElectricity /></Area>} />
+                  <Route path="/billing/banking" element={<Area area="billing"><BankingDetails /></Area>} />
+                  <Route path="/billing/plans" element={<Area area="billing"><PaymentPlans /></Area>} />
+                  <Route path="/billing/subsidy" element={<Area area="billing"><IndigentSubsidy /></Area>} />
+                  <Route path="/billing/disputes" element={<Area area="billing"><CitizenDisputes /></Area>} />
                   <Route path="/utilities" element={<Area area="utilities"><UtilitiesDashboard /></Area>} />
                   <Route path="/utilities/meters" element={<Area area="utilities"><Meters /></Area>} />
                   <Route path="/utilities/faults" element={<Area area="utilities"><Faults /></Area>} />
                   <Route path="/utilities/arrears" element={<Area area="utilities"><Arrears /></Area>} />
+                  <Route path="/utilities/subsidy" element={<Area area="utilities"><Subsidy /></Area>} />
+                  <Route path="/utilities/disputes" element={<Area area="utilities"><OfficialDisputes /></Area>} />
                   <Route path="/utilities/settings" element={<Area area="utilities"><Settings /></Area>} />
                   <Route path="*" element={<Navigate to={PERSONA_META[session.persona].home} replace />} />
                 </Routes>

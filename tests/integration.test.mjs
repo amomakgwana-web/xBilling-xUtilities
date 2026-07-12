@@ -38,6 +38,15 @@ async function patch(path, token, data) {
   return { status: res.status, body: await res.json() };
 }
 
+async function put(path, token, data) {
+  const res = await fetch(`${API}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: data ? JSON.stringify(data) : undefined,
+  });
+  return { status: res.status, body: await res.json() };
+}
+
 test("login rejects wrong password", async () => {
   const { status, body } = await login("thandi.cele@example.co.za", "not-the-password");
   assert.equal(status, 401);
@@ -224,4 +233,146 @@ test("an official may edit their own municipality's contact details, not its bra
 
   const stillUp = await get("/platform/municipalities", token);
   assert.equal(stillUp.status, 200, "gateway must still be responding after a rejected patch");
+});
+
+test("banking details: citizen may save and read only their own, always masked", async () => {
+  const { body: auth } = await login("thandi.cele@example.co.za", "Citizen!2026");
+  const token = auth.data.token;
+
+  const saved = await put("/billing/banking/WE-2024-00421", token, {
+    bankName: "Capitec",
+    accountHolder: "Thandi Cele",
+    accountNumber: "4070123456",
+    branchCode: "470010",
+    accountType: "cheque",
+    debitDay: 1,
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.data.maskedAccountNumber, "••••3456");
+  assert.ok(!JSON.stringify(saved.body.data).includes("4070123456"), "raw bank account number must never round-trip in the response");
+
+  // Editing without a new number keeps the one already on file.
+  const edited = await put("/billing/banking/WE-2024-00421", token, {
+    bankName: "Capitec",
+    accountHolder: "Thandi Cele",
+    branchCode: "470011",
+    accountType: "cheque",
+    debitDay: 5,
+  });
+  assert.equal(edited.status, 200);
+  assert.equal(edited.body.data.maskedAccountNumber, "••••3456");
+  assert.equal(edited.body.data.branchCode, "470011");
+
+  const foreign = await put("/billing/banking/TSH-2025-00012", token, {
+    bankName: "FNB",
+    accountHolder: "Someone Else",
+    accountNumber: "1234567890",
+    branchCode: "250655",
+    accountType: "savings",
+    debitDay: 1,
+  });
+  assert.equal(foreign.status, 403);
+});
+
+test("payment plans: citizen sets up an instalment plan and cannot double up", async () => {
+  const { body: auth } = await login("thandi.cele@example.co.za", "Citizen!2026");
+  const token = auth.data.token;
+
+  const account = await get("/billing/accounts/WE-2024-00421", token);
+  assert.ok(account.body.data.balance > 0, "fixture account must carry a balance for this test to be meaningful");
+
+  const plan = await post("/payments/plans", token, {
+    accountNumber: "WE-2024-00421",
+    consumerName: "Thandi Cele",
+    totalAmount: account.body.data.balance,
+    installments: 6,
+  });
+  assert.equal(plan.status, 201);
+  assert.equal(plan.body.data.status, "active");
+  assert.ok(Math.abs(plan.body.data.installmentAmount * 6 - account.body.data.balance) < 0.02);
+
+  const duplicate = await post("/payments/plans", token, {
+    accountNumber: "WE-2024-00421",
+    consumerName: "Thandi Cele",
+    totalAmount: account.body.data.balance,
+    installments: 3,
+  });
+  assert.equal(duplicate.status, 409);
+
+  const { body: opAuth } = await login("operator@xplatform.co.za", "Operator!2026");
+  const allPlans = await get("/payments/plans", opAuth.data.token);
+  assert.equal(allPlans.status, 200);
+  assert.ok(allPlans.body.data.some((p) => p.id === plan.body.data.id));
+});
+
+test("indigent subsidy: tiered eligibility is computed server-side, not trusted from the client", async () => {
+  const { body: auth } = await login("thandi.cele@example.co.za", "Citizen!2026");
+  const token = auth.data.token;
+
+  const lowIncome = await post("/billing/subsidy/apply", token, {
+    accountNumber: "WE-2024-00421",
+    householdIncome: 3000,
+    householdSize: 4,
+  });
+  assert.equal(lowIncome.status, 201);
+  assert.equal(lowIncome.body.data.status, "approved");
+  assert.equal(lowIncome.body.data.subsidyPercent, 100);
+
+  const midIncome = await post("/billing/subsidy/apply", token, {
+    accountNumber: "WE-2024-00421",
+    householdIncome: 6000,
+    householdSize: 3,
+  });
+  assert.equal(midIncome.body.data.subsidyPercent, 25);
+
+  const tooHigh = await post("/billing/subsidy/apply", token, {
+    accountNumber: "WE-2024-00421",
+    householdIncome: 20000,
+    householdSize: 2,
+  });
+  assert.equal(tooHigh.body.data.status, "rejected");
+
+  const foreign = await post("/billing/subsidy/apply", token, { accountNumber: "TSH-2025-00012", householdIncome: 1000, householdSize: 1 });
+  assert.equal(foreign.status, 403);
+});
+
+test("disputes: citizen raises against their own invoice; official in the same municipality resolves it", async () => {
+  const { body: citizenAuth } = await login("thandi.cele@example.co.za", "Citizen!2026");
+  const citizenToken = citizenAuth.data.token;
+
+  const foreignInvoice = await post("/billing/disputes", citizenToken, {
+    accountNumber: "WE-2024-00421",
+    invoiceId: "does-not-exist",
+    reason: "Incorrect meter reading",
+    description: "Test",
+  });
+  assert.equal(foreignInvoice.status, 404);
+
+  const raised = await post("/billing/disputes", citizenToken, {
+    accountNumber: "WE-2024-00421",
+    invoiceId: "inv-1001",
+    reason: "Incorrect meter reading",
+    description: "Meter reading looks too high for this period",
+  });
+  assert.equal(raised.status, 201);
+  assert.equal(raised.body.data.status, "open");
+
+  const consumerResolveAttempt = await post(`/billing/disputes/${raised.body.data.id}/resolve`, citizenToken, {
+    status: "resolved",
+    resolutionNote: "n/a",
+  });
+  assert.equal(consumerResolveAttempt.status, 403);
+
+  const { body: officialAuth } = await login("official@ekurhuleni.gov.za", "Official!2026");
+  const resolved = await post(`/billing/disputes/${raised.body.data.id}/resolve`, officialAuth.data.token, {
+    status: "resolved",
+    resolutionNote: "Reading verified correct against the meter log.",
+  });
+  assert.equal(resolved.status, 200);
+  assert.equal(resolved.body.data.status, "resolved");
+
+  const citizenView = await get("/billing/disputes?accountNumber=WE-2024-00421", citizenToken);
+  const seen = citizenView.body.data.find((d) => d.id === raised.body.data.id);
+  assert.equal(seen.status, "resolved");
+  assert.equal(seen.resolutionNote, "Reading verified correct against the meter log.");
 });

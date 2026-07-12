@@ -72,6 +72,55 @@ export const invoiceLinesRelations = relations(invoiceLines, ({ one }) => ({
   invoice: one(invoices, { fields: [invoiceLines.invoiceId], references: [invoices.id] }),
 }));
 
+/**
+ * One row per account. `accountNumber` is stored in full for the demo
+ * payment simulation to key off of — a real deployment would tokenize this
+ * at the payment processor and never persist a raw account number here.
+ * The API layer masks it to the last 4 digits in every response.
+ */
+export const bankingDetails = billingSchema.table("banking_details", {
+  accountId: text("account_id")
+    .primaryKey()
+    .references(() => accounts.id),
+  bankName: text("bank_name").notNull(),
+  accountHolder: text("account_holder").notNull(),
+  accountNumber: text("account_number").notNull(),
+  branchCode: text("branch_code").notNull(),
+  accountType: text("account_type").notNull(), // cheque | savings
+  debitDay: integer("debit_day").notNull(), // 1-31
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const disputes = billingSchema.table("disputes", {
+  id: text("id").primaryKey(),
+  accountNumber: text("account_number").notNull(),
+  invoiceId: text("invoice_id")
+    .notNull()
+    .references(() => invoices.id),
+  reason: text("reason").notNull(),
+  description: text("description").notNull(),
+  status: text("status").notNull(), // open | under_review | resolved | rejected
+  resolutionNote: text("resolution_note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+});
+
+/**
+ * Indigent subsidy is self-service and fully auto-computed against a
+ * declared household income — see repository.ts for the tiers. There is no
+ * approval workflow to build a reviewer screen for; officials get read-only
+ * visibility into what was granted.
+ */
+export const subsidyApplications = billingSchema.table("subsidy_applications", {
+  id: text("id").primaryKey(),
+  accountNumber: text("account_number").notNull(),
+  householdIncome: numeric("household_income").notNull(),
+  householdSize: integer("household_size").notNull(),
+  subsidyPercent: numeric("subsidy_percent").notNull(),
+  status: text("status").notNull(), // approved | rejected
+  appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const billingRuns = billingSchema.table("billing_runs", {
   id: text("id").primaryKey(),
   municipality: text("municipality").notNull(),
