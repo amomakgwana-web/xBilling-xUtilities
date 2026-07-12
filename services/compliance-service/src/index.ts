@@ -4,6 +4,7 @@ import morgan from "morgan";
 import { integrationsRouter } from "./routes/integrations.js";
 import { scoreRouter } from "./routes/score.js";
 import { kycRouter } from "./routes/kyc.js";
+import { auditRouter } from "./routes/audit.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 4005);
@@ -19,6 +20,7 @@ app.get("/health", (_req, res) => {
 app.use("/integrations", integrationsRouter);
 app.use("/score", scoreRouter);
 app.use("/kyc", kycRouter);
+app.use("/audit", auditRouter);
 
 app.listen(port, () => {
   console.log(`[compliance-service] listening on :${port}`);

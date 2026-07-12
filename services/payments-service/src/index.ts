@@ -5,6 +5,7 @@ import { methodsRouter } from "./routes/methods.js";
 import { reconRouter } from "./routes/recon.js";
 import { debicheckRouter } from "./routes/debicheck.js";
 import { initiateRouter } from "./routes/initiate.js";
+import { plansRouter } from "./routes/plans.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 4002);
@@ -21,6 +22,17 @@ app.use("/methods", methodsRouter);
 app.use("/recon", reconRouter);
 app.use("/debicheck", debicheckRouter);
 app.use("/initiate", initiateRouter);
+app.use("/plans", plansRouter);
+
+// Safety net: any error forwarded via next(err) — including from asyncHandler
+// on every route above — lands here as a clean 500 instead of crashing the
+// process, the same fix applied to the gateway and billing-service.
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("[payments-service] unhandled route error:", err);
+  if (!res.headersSent) {
+    res.status(500).json({ ok: false, data: null, error: { code: "INTERNAL_ERROR", message: "Something went wrong" } });
+  }
+});
 
 app.listen(port, () => {
   console.log(`[payments-service] listening on :${port}`);

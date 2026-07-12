@@ -14,7 +14,8 @@ services:
     environment:
       PORT: 4001
       CORS_ORIGIN: "*"
-      # Set DATABASE_URL in a root .env (gitignored) — same value for all 5
+      METERING_SERVICE_URL: http://metering-service:4003
+      # Set DATABASE_URL in a root .env (gitignored) — same value for all
       # services, pointed at the shared Supabase project via the
       # least-privilege `app_service` role. See README.md > Persistence.
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required — see README.md > Persistence}
@@ -62,7 +63,10 @@ services:
       PORT: 4004
       CORS_ORIGIN: "*"
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required — see README.md > Persistence}
+      # Optional — unset means the mock gateway/fallback copy is used instead:
       # ANTHROPIC_API_KEY: set this to enable live AI insight/draft generation.
+      # BULKSMS_TOKEN_ID / BULKSMS_TOKEN_SECRET: set both to send real SMS.
+      # RESEND_API_KEY / RESEND_FROM: set both to send real email.
     ports:
       - "4004:4004"
     networks: [xplatform]
@@ -90,7 +94,8 @@ services:
     environment:
       PORT: 4000
       JWT_SECRET: dev-secret-change-me
-      CORS_ORIGIN: "http://localhost:5173,http://localhost:5174,http://localhost:5175"
+      CORS_ORIGIN: "http://localhost:5173"
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required — see README.md > Persistence}
       BILLING_SERVICE_URL: http://billing-service:4001
       PAYMENTS_SERVICE_URL: http://payments-service:4002
       METERING_SERVICE_URL: http://metering-service:4003
@@ -106,38 +111,14 @@ services:
       - compliance-service
     networks: [xplatform]
 
-  web-xlayer:
+  web-platform:
     build:
       context: .
       dockerfile: docker/Dockerfile.web
       args:
-        APP: web-xlayer
+        APP: web-platform
         VITE_API_BASE_URL: http://localhost:4000/api
     ports:
       - "5173:80"
-    depends_on: [gateway]
-    networks: [xplatform]
-
-  web-xbilling:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.web
-      args:
-        APP: web-xbilling
-        VITE_API_BASE_URL: http://localhost:4000/api
-    ports:
-      - "5174:80"
-    depends_on: [gateway]
-    networks: [xplatform]
-
-  web-xutilities:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.web
-      args:
-        APP: web-xutilities
-        VITE_API_BASE_URL: http://localhost:4000/api
-    ports:
-      - "5175:80"
     depends_on: [gateway]
     networks: [xplatform]

@@ -1,21 +1,24 @@
 # xBilling / xUtilities Platform
 
 A microservices platform for South African municipal utility billing —
-consumer billing (xBilling), utilities operations (xUtilities), and a unified
+consumer billing (xBilling), utilities operations (xUtilities), and a
 platform console (xLayer) sitting across billing, payments, metering and
-communications.
+communications — delivered as **one unified web platform**: a single
+console with one sign-in, where each persona (citizen, municipal official,
+platform operator) sees the product areas they're entitled to.
 
 ## Architecture
 
 Node.js/TypeScript pnpm monorepo. Each backend service owns its own data and
-is only reachable through the API gateway; frontends never call a downstream
-service directly.
+is only reachable through the API gateway; the frontend never calls a
+downstream service directly.
 
 ```
 apps/
-  web-xlayer/       Platform console — command centre, payments, campaigns, integrations
-  web-xbilling/     Consumer billing portal — dashboard, invoices, pay now
-  web-xutilities/   Utilities admin — meters, faults, dispatch
+  web-platform/     Unified console — one sign-in, three role-gated product areas:
+                      xLayer    (operator)            command centre, payments ops, campaigns, integrations
+                      xBilling  (citizen + operator)  dashboard, invoices, pay now
+                      xUtilities(official + operator) meters, token vending, faults
 
 services/
   gateway/              Single entry point: proxies /api/* to services below,
@@ -33,7 +36,7 @@ packages/
   shared-types/     Zod schemas + TS types shared by every service and frontend
   integrations/     Mock adapters for third parties (see below)
   ui-kit/           Shared design tokens, icons and React primitives —
-                     the dark command-centre look used by all three frontends
+                     the dark command-centre look used across the console
 ```
 
 Services communicate over plain HTTP with a consistent envelope
@@ -46,13 +49,14 @@ same way it would in production.
 
 Each service is backed by a real Postgres database — a Supabase project
 ("xBilling") with one **schema per service** (`billing`, `payments`,
-`metering`, `comms`, `compliance`), so the microservice data-ownership
-boundary holds even though it's physically one Postgres instance: no service
-queries another's tables directly, and no cross-schema foreign keys exist.
+`metering`, `comms`, `compliance`, plus `platform` for the gateway's
+`users` table), so the microservice data-ownership boundary holds even
+though it's physically one Postgres instance: no service queries another's
+tables directly, and no cross-schema foreign keys exist.
 
 Each service connects via [Drizzle ORM](https://orm.drizzle.team/)
 (`src/db/schema.ts` + `src/db/client.ts`) using a dedicated `app_service`
-Postgres role scoped to only those 5 schemas — not the Supabase project's
+Postgres role scoped to only those 6 schemas — not the Supabase project's
 superuser. Every service needs `DATABASE_URL` set (see each
 `services/*/.env.example`); get the `app_service` password from whoever
 provisioned the project, or rotate it via the Supabase SQL editor:
@@ -60,13 +64,28 @@ provisioned the project, or rotate it via the Supabase SQL editor:
 ALTER ROLE app_service WITH PASSWORD 'new-password-here';
 ```
 
-**Row Level Security is currently disabled** on all 14 tables. This is
-lower-risk than usual because they live in non-`public` schemas, which
-Supabase's auto-generated REST API doesn't expose unless you explicitly add
-them to the exposed-schema list — and nothing in this codebase does. If you
-ever query these tables via `supabase-js`/PostgREST from a browser (instead
-of the Drizzle connection these services use), enable RLS with policies
-first.
+**Row Level Security is enabled on all 26 tables**, each with one policy
+granting `app_service` unrestricted access — the only role any service
+connects as. No policy exists for the `anon`/`authenticated` PostgREST
+roles, so they default to denied; Supabase's security advisor reports zero
+lints. See `db/005_security_hardening.sql` for the exact policies.
+
+## Business logic
+
+Billing is computed, not seeded: `POST /api/billing/billing-runs` pulls
+per-meter consumption from metering-service (the delta of the two most
+recent readings in `metering.readings`), prices it with the account's
+tariff from `billing.tariffs` (SA-style rates: R/kWh, R/kl, fixed
+refuse/sewer charges), adds 15% VAT, and writes invoice + lines + balance
+atomically per account. Re-running a period never double-bills. Prepaid
+electricity is excluded from statements (paid at vend time). Reconciliation
+has a real matching pass too: `POST /api/payments/recon/run` applies each
+suspense transaction to its account's oldest open invoice over
+billing-service's HTTP API and posts it. Every KYC verification is
+persisted to `compliance.kyc_checks` (POPIA requires the record to exist).
+
+The SQL for all of this lives in `db/00*.sql`, applied in order — both the
+Supabase project and CI's throwaway Postgres run the identical files.
 
 ## What's mocked vs real
 
@@ -78,14 +97,54 @@ response shapes, no real credentials or network calls. Swap a mock adapter's
 internals for a real HTTP client when you have production credentials — the
 public method signatures are designed not to need to change.
 
-The one genuinely optional live integration is the Claude-powered "AI
-Insight" / SMS-drafting feature in `comms-service`. It calls the Anthropic
-API server-side (never from the browser) only if `ANTHROPIC_API_KEY` is set
-on `comms-service`; otherwise every caller gets a deterministic canned
-response instead of an error.
+Three integrations go **live** the moment a key lands in `comms-service`'s
+environment, with the mock as fallback otherwise:
+- **Email** — set `RESEND_API_KEY` (and optionally `RESEND_FROM`) and
+  campaign email goes out through the Resend API for real.
+- **SMS** — set `BULKSMS_TOKEN_ID` + `BULKSMS_TOKEN_SECRET` and campaign /
+  arrears-reminder SMS dispatches through the BulkSMS JSON API to the real
+  MSISDNs stored on `billing.accounts`.
+- **AI Insight / SMS drafting** — set `ANTHROPIC_API_KEY` for live Claude
+  analysis; a deterministic canned response otherwise.
 
-Auth is a dev-mode JWT issuer (`POST /api/auth/dev-login`) — replace
-`services/gateway/src/auth.ts` with a real IdP before production.
+The payment rails (SwiftPay, Capitec Pay, …), Conlog token vending, and the
+government KYC endpoints (HANIS, SARS, TransUnion, Deeds) remain mock
+adapters — those require signed merchant/government agreements that only
+the business can obtain; the adapters' method signatures are shaped so only
+their bodies change when credentials exist.
+
+## Auth
+
+Sign-in is real: `POST /api/auth/login` verifies email + password with
+bcrypt against `platform.users` (provisioned identities — deliberately no
+public self-signup for a municipal platform) and issues a short-lived JWT.
+Citizens are **bound to their own billing account in the token**: the
+gateway forwards the verified identity to services as `x-user-*` headers
+(overwritten unconditionally, never trusted from the client) and every
+service enforces ownership — a citizen who requests another account's
+statement, meter, or payment gets a 403 no matter what URL or query
+parameters they craft.
+
+Demo identities (see `db/004_seed_real.sql`): `operator@xplatform.co.za` /
+`Operator!2026`, `official@ekurhuleni.gov.za` / `Official!2026`, and five
+citizens (e.g. `thandi.cele@example.co.za`) all with `Citizen!2026`.
+
+The gateway enforces the token on every proxied `/api/*` route:
+
+| Route            | Allowed roles              |
+|-------------------|-----------------------------|
+| `/api/billing`     | consumer, admin, service     |
+| `/api/payments`    | consumer, admin, service     |
+| `/api/metering`    | consumer, admin, service     |
+| `/api/comms`       | admin, service               |
+| `/api/compliance`  | admin, service               |
+
+`/api/auth/login` and `/api/platform/status` stay open. The frontend
+attaches the token to every call and returns the user to the login screen
+on a 401. Every authenticated **mutating** request is also written
+(fire-and-forget) to a hash-chained, tamper-evident audit log in
+compliance-service — `GET /api/compliance/audit/verify` recomputes the
+whole chain and reports exactly where it breaks if any row was altered.
 
 ## Running locally
 
@@ -111,17 +170,15 @@ Ports:
 | metering-service       | 4003 |
 | comms-service          | 4004 |
 | compliance-service     | 4005 |
-| web-xlayer             | 5173 |
-| web-xbilling           | 5174 |
-| web-xutilities         | 5175 |
+| web-platform           | 5173 |
 
-All three frontends read `VITE_API_BASE_URL` (defaults to
-`http://localhost:4000/api`, i.e. the gateway) and never call a backend
+The frontend reads `VITE_API_BASE_URL` (defaults to
+`http://localhost:4000/api`, i.e. the gateway) and never calls a backend
 service directly.
 
 ## Docker
 
-`docker-compose.yml` builds every service and frontend (frontends via a
+`docker-compose.yml` builds every service and the unified frontend (via a
 multi-stage build that serves the static Vite bundle through nginx) and wires
 them together on one bridge network:
 
@@ -167,6 +224,37 @@ After migrating each service to Supabase Postgres via Drizzle:
   on boot. Fixed and re-verified: all 6 services passed `/health`, a
   cross-service payment settled through to a persisted invoice update, and
   all three frontends were loaded in a browser against the live stack.
+
+After unifying the three frontends into `apps/web-platform` and turning on
+gateway auth enforcement:
+- `pnpm run build` succeeds cleanly across all workspace packages including
+  the new unified app.
+- Live verification against all 6 services backed by a Postgres instance
+  seeded with the exact schema/data of the Supabase project (this sandbox
+  still can't open raw-TCP connections to Supabase, so a local stand-in was
+  used again):
+  - Unauthenticated `/api/*` calls are rejected 401; a consumer JWT is
+    rejected 403 on `/api/metering`, `/api/comms` and `/api/compliance` but
+    accepted on billing/payments; an admin JWT reaches everything.
+  - The full cross-service payment flow was re-run **with a consumer
+    bearer token**: `POST /api/payments/initiate` → SwiftPay mock settles →
+    billing invoice/balance persist the payment.
+  - A real browser walked the whole console: unauthenticated redirect to
+    `/login`; operator sign-in sees all three product areas and every page
+    renders live data; citizen sign-in is locked to their own account, has
+    only the xBilling section, gets bounced from deep-links to other areas,
+    and completed a pay-now flow; official sign-in has only the xUtilities
+    section and vended a prepaid token. Screenshots taken at every step.
+
+## Tests & CI
+
+`pnpm test` runs 12 integration tests (`tests/integration.test.mjs`,
+node:test, no test-framework dependency) against a running stack: the
+login/ownership security matrix, the cross-service payment settlement, the
+billing engine's tariff+VAT maths and double-billing guard, audit-chain
+integrity, and KYC persistence. `.github/workflows/ci.yml` runs the same
+suite on every PR: it boots a throwaway Postgres 16, applies `db/00*.sql`,
+builds the workspace, starts all six services, and runs the tests.
 
 ## What's next
 

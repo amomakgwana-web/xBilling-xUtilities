@@ -1,7 +1,15 @@
 import { Router } from "express";
+import { forbidConsumers } from "../identity.js";
 import { createFault, dispatchFault, listFaults, resolveFault } from "../repository.js";
 
 export const faultsRouter: Router = Router();
+
+// Fault management is an operations surface — staff only, even though the
+// metering domain itself is consumer-reachable for token vending.
+faultsRouter.use((req, res, next) => {
+  if (forbidConsumers(req, res)) return;
+  next();
+});
 
 faultsRouter.get("/", async (_req, res) => {
   const faults = await listFaults();
