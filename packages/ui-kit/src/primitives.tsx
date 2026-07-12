@@ -95,6 +95,7 @@ const BADGE_MAP: Record<string, [string, string, string, string]> = {
   flagged: [T.redBg, T.redT, T.red, "Flagged"],
   rejected: [T.redBg, T.redT, T.red, "Rejected"],
   cancelled: [T.redBg, T.redT, T.red, "Cancelled"],
+  handover: [T.redBg, T.redT, T.red, "Legal/Handover"],
   open: [T.amberBg, T.amberT, T.amber, "Open"],
   under_review: [T.amberBg, T.amberT, T.amber, "Under Review"],
   resolved: [T.greenBg, T.greenT, T.green, "Resolved"],

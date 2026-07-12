@@ -1,8 +1,16 @@
 import { Router } from "express";
 import { MeterReadingIngestSchema, TokenVendRequestSchema } from "@xplatform/shared-types";
 import { ConlogAdapter } from "@xplatform/integrations";
+import { asyncHandler } from "../asyncHandler.js";
 import { callerFrom, forbidConsumers, forbidForeignAccount, officialMunicipalityScope } from "../identity.js";
-import { consumptionByMunicipality, getMeterBySerial, listMeters, updateMeterReading } from "../repository.js";
+import {
+  consumptionByMunicipality,
+  getMeterBySerial,
+  listMeters,
+  listVendedTokens,
+  recordVendedToken,
+  updateMeterReading,
+} from "../repository.js";
 
 export const metersRouter: Router = Router();
 const conlog = new ConlogAdapter();
@@ -27,6 +35,22 @@ metersRouter.get("/consumption", async (req, res) => {
   const result = await consumptionByMunicipality(municipality);
   res.json({ ok: true, data: result, meta: { service: "metering-service", tookMs: 0 } });
 });
+
+/** Prepaid token vend history — citizens see their own account only. */
+metersRouter.get(
+  "/vended-tokens",
+  asyncHandler(async (req, res) => {
+    const caller = callerFrom(req);
+    const scope = officialMunicipalityScope(req);
+    const { accountNumber } = req.query;
+    const result = await listVendedTokens({
+      accountNumber:
+        caller.role === "consumer" ? caller.accountNumber : typeof accountNumber === "string" ? accountNumber : undefined,
+      municipality: caller.role === "consumer" ? undefined : scope,
+    });
+    res.json({ ok: true, data: result, meta: { service: "metering-service", tookMs: 0 } });
+  }),
+);
 
 metersRouter.post("/ingest", async (req, res) => {
   if (forbidConsumers(req, res)) return;
@@ -56,5 +80,13 @@ metersRouter.post("/vend-token", async (req, res) => {
   }
   if (forbidForeignAccount(req, res, meter.accountNumber)) return;
   const result = await conlog.vendToken(parsed.data);
+  await recordVendedToken({
+    meterId: meter.id,
+    serial: meter.serial,
+    accountNumber: meter.accountNumber,
+    amount: parsed.data.amount,
+    units: result.units,
+    token: result.token,
+  });
   res.json({ ok: true, data: result, meta: { service: "metering-service", tookMs: 0 } });
 });

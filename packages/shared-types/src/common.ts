@@ -34,6 +34,7 @@ export const StatusSchema = z.enum([
   "flagged",
   "draft",
   "connected",
+  "handover",
 ]);
 export type Status = z.infer<typeof StatusSchema>;
 

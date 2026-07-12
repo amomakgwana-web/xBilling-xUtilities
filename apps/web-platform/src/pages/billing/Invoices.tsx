@@ -1,27 +1,42 @@
 import { useEffect, useState } from "react";
-import type { Invoice } from "@xplatform/shared-types";
-import { T, IC, Card, CH, SectionTitle, Badge, LoadingState, ErrorState, fmtR } from "@xplatform/ui-kit";
+import type { Account, Invoice } from "@xplatform/shared-types";
+import { T, IC, Card, CH, SectionTitle, Badge, Btn, Spin, LoadingState, ErrorState, fmtR } from "@xplatform/ui-kit";
 import { api } from "../../api";
 import { useAccount } from "../../AccountContext";
+import { downloadInvoicePdf } from "../../pdf";
 
 export function Invoices() {
   const { accountNumber } = useAccount();
+  const [account, setAccount] = useState<Account | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
     setError(null);
-    api
-      .get<Invoice[]>(`/billing/invoices?accountNumber=${accountNumber}`)
-      .then(setInvoices)
+    Promise.all([api.get<Account>(`/billing/accounts/${accountNumber}`), api.get<Invoice[]>(`/billing/invoices?accountNumber=${accountNumber}`)])
+      .then(([acc, inv]) => {
+        setAccount(acc);
+        setInvoices(inv);
+      })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load invoices"))
       .finally(() => setLoading(false));
   };
 
   useEffect(load, [accountNumber]);
+
+  const download = async (inv: Invoice) => {
+    if (!account) return;
+    setDownloading(inv.id);
+    try {
+      await downloadInvoicePdf(inv, account);
+    } finally {
+      setDownloading(null);
+    }
+  };
 
   if (loading) return <LoadingState label="Loading invoices…" />;
   if (error) return <ErrorState message={error} onRetry={load} />;
@@ -57,9 +72,16 @@ export function Invoices() {
                     <div style={{ width: 100, textAlign: "right", color: T.white, fontWeight: 700 }}>{fmtR(line.amount)}</div>
                   </div>
                 ))}
-                <div style={{ display: "flex", padding: "10px 18px", background: T.surf3 }}>
+                <div style={{ display: "flex", alignItems: "center", padding: "10px 18px", background: T.surf3 }}>
                   <div style={{ flex: 1, fontSize: 12, color: T.g100 }}>Paid to date</div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: T.green }}>{fmtR(inv.amountPaid)}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: T.green, marginRight: 16 }}>{fmtR(inv.amountPaid)}</div>
+                  <Btn
+                    ch={downloading === inv.id ? <><Spin s={12} /> Generating…</> : "Download PDF"}
+                    sm
+                    v="ghost"
+                    onClick={() => download(inv)}
+                    disabled={downloading === inv.id || !account}
+                  />
                 </div>
               </div>
             )}

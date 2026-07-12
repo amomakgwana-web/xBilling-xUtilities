@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import type { DebiCheckMandate, PaymentMethod, PaymentMethodId, PaymentPlan, PaymentTransaction } from "@xplatform/shared-types";
 import { db } from "./db/client.js";
 import { debiCheckMandates, paymentMethods, paymentPlans, transactions } from "./db/schema.js";
@@ -96,7 +96,18 @@ function toPaymentPlan(row: PaymentPlanRow): PaymentPlan {
   };
 }
 
-let planSeq = 100;
+/**
+ * Next `PLN-<n>` id, derived from the highest numeric suffix already
+ * stored — an in-memory counter seeded at 100 on every process start would
+ * collide with rows a previous process already persisted.
+ */
+async function nextPlanId(): Promise<string> {
+  const rows = await db.execute<{ max: number | null }>(
+    sql`select max(cast(substring(id from '[0-9]+$') as integer)) as max from payments.payment_plans`,
+  );
+  const max = rows[0]?.max ?? 99;
+  return `PLN-${max + 1}`;
+}
 
 export async function listPaymentPlans(filters: { accountNumber?: string }): Promise<PaymentPlan[]> {
   const rows = filters.accountNumber
@@ -111,7 +122,7 @@ export async function createPaymentPlan(input: {
   totalAmount: number;
   installments: number;
 }): Promise<PaymentPlan> {
-  const id = `PLN-${planSeq++}`;
+  const id = await nextPlanId();
   const installmentAmount = Math.round((input.totalAmount / input.installments) * 100) / 100;
   const rows = await db
     .insert(paymentPlans)

@@ -35,3 +35,19 @@ export const users = platformSchema.table("users", {
   municipalityId: text("municipality_id").references(() => municipalities.id), // officials only
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Integration API keys, operator-managed. Only a sha256 hash of the secret
+ * is stored — the plaintext key is shown exactly once, at creation, the same
+ * pattern as GitHub/Stripe tokens. `keyPrefix` (first 8 chars) is kept in the
+ * clear purely so the list view can tell keys apart without re-hashing.
+ */
+export const apiKeys = platformSchema.table("api_keys", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  keyPrefix: text("key_prefix").notNull(),
+  keyHash: text("key_hash").notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+});

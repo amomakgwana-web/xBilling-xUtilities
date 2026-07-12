@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { issueToken, requireAuth, requireRole, type AuthedUser } from "./auth.js";
 import { getPlatformStatus } from "./platformStatus.js";
 import { verifyCredentials } from "./users.js";
+import { createApiKey, listApiKeys, revokeApiKey } from "./apiKeys.js";
 import { db } from "./db/client.js";
 import { municipalities } from "./db/schema.js";
 
@@ -136,6 +137,62 @@ app.patch("/api/platform/municipalities/:id", requireAuth, requireRole("admin", 
       return;
     }
     res.json({ ok: true, data: rows[0], meta: { service: "gateway", tookMs: 0 } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Integration API keys, operator-only — officials share the coarser `admin`
+ * role with operators, so `persona` is what actually keeps them off a
+ * platform-wide credential they have no reason to hold. Key lifecycle only
+ * (issue/list/revoke); nothing downstream verifies requests against these
+ * keys yet.
+ */
+function requireOperator(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  if (req.user?.persona === "official") {
+    res.status(403).json({ ok: false, data: null, error: { code: "FORBIDDEN", message: "This operation is restricted to platform operators" } });
+    return;
+  }
+  next();
+}
+
+app.get("/api/platform/api-keys", requireAuth, requireRole("admin", "service"), requireOperator, async (_req, res, next) => {
+  try {
+    const rows = await listApiKeys();
+    res.json({ ok: true, data: rows, meta: { service: "gateway", tookMs: 0 } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post("/api/platform/api-keys", requireAuth, requireRole("admin", "service"), requireOperator, express.json(), async (req, res, next) => {
+  try {
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name) {
+      res.status(400).json({ ok: false, data: null, error: { code: "INVALID_REQUEST", message: "name is required" } });
+      return;
+    }
+    const created = await createApiKey(name, req.user?.name ?? req.user?.sub ?? "unknown");
+    res.status(201).json({ ok: true, data: created, meta: { service: "gateway", tookMs: 0 } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post("/api/platform/api-keys/:id/revoke", requireAuth, requireRole("admin", "service"), requireOperator, async (req, res, next) => {
+  try {
+    const id = req.params.id;
+    if (!id) {
+      res.status(400).json({ ok: false, data: null, error: { code: "INVALID_REQUEST", message: "id is required" } });
+      return;
+    }
+    const revoked = await revokeApiKey(id);
+    if (!revoked) {
+      res.status(404).json({ ok: false, data: null, error: { code: "NOT_FOUND", message: "API key not found" } });
+      return;
+    }
+    res.json({ ok: true, data: revoked, meta: { service: "gateway", tookMs: 0 } });
   } catch (err) {
     next(err);
   }

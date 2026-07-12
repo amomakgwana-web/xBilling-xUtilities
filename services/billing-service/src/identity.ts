@@ -55,3 +55,18 @@ export function officialMunicipalityScope(req: Request): string | undefined {
   const caller = callerFrom(req);
   return caller.persona === "official" ? caller.municipalityId : undefined;
 }
+
+/**
+ * Returns true (and sends the 403) unless the caller is platform-wide staff
+ * (operator or service) — for routes covering data that isn't scoped to any
+ * one municipality, like the tariff book. Officials, despite sharing the
+ * `admin` role with operators, are municipality-scoped by design and must
+ * not be able to change a rate every municipality bills against.
+ */
+export function forbidNonOperators(req: Request, res: Response): boolean {
+  const caller = callerFrom(req);
+  if (caller.role === "service") return false;
+  if (caller.role === "admin" && caller.persona !== "official") return false;
+  res.status(403).json({ ok: false, data: null, error: { code: "FORBIDDEN", message: "This operation is restricted to platform operators" } });
+  return true;
+}

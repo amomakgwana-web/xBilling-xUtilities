@@ -31,6 +31,8 @@ const SECTIONS: NavSection[] = [
       { to: "/integrations", label: "Integrations", icon: IC.plug },
       { to: "/audit", label: "Audit Trail", icon: IC.shield },
       { to: "/municipalities", label: "Municipalities", icon: IC.db },
+      { to: "/tariffs", label: "Tariff Book", icon: IC.chart },
+      { to: "/analytics", label: "Analytics", icon: IC.chart },
     ],
   },
   {
@@ -55,10 +57,13 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: "/utilities", label: "Overview", icon: IC.dash, end: true },
       { to: "/utilities/meters", label: "Meters", icon: IC.meter },
+      { to: "/utilities/electricity", label: "Electricity", icon: IC.bolt },
       { to: "/utilities/faults", label: "Faults", icon: IC.alert },
       { to: "/utilities/arrears", label: "Arrears", icon: IC.billing },
+      { to: "/utilities/legal-handover", label: "Legal & Handover", icon: IC.alert },
       { to: "/utilities/subsidy", label: "Indigent Subsidy", icon: IC.users },
       { to: "/utilities/disputes", label: "Disputes", icon: IC.chat },
+      { to: "/utilities/reports", label: "Reports", icon: IC.chart },
       { to: "/utilities/settings", label: "Settings", icon: IC.settings },
     ],
   },

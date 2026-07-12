@@ -39,3 +39,14 @@ export const TokenVendRequestSchema = z.object({
   amount: z.number().positive(),
 });
 export type TokenVendRequest = z.infer<typeof TokenVendRequestSchema>;
+
+export const VendedTokenSchema = z.object({
+  id: z.string(),
+  serial: z.string(),
+  accountNumber: z.string(),
+  amount: z.number(),
+  units: z.number(),
+  token: z.string(),
+  vendedAt: z.string(),
+});
+export type VendedToken = z.infer<typeof VendedTokenSchema>;

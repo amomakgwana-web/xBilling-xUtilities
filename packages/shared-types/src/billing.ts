@@ -17,6 +17,7 @@ export const AccountSchema = z.object({
 export type Account = z.infer<typeof AccountSchema>;
 
 export const TariffSchema = z.object({
+  id: z.number().optional(),
   code: z.string(),
   description: z.string(),
   electricityPerKwh: z.number(),

@@ -37,6 +37,20 @@ export function Arrears() {
 
   useEffect(load, []);
 
+  const [handingOver, setHandingOver] = useState<string | null>(null);
+
+  const toggleHandover = async (accountNumber: string) => {
+    setHandingOver(accountNumber);
+    try {
+      const updated = await api.post<Account>(`/billing/accounts/${accountNumber}/handover`);
+      setAccounts((prev) => prev.map((a) => (a.accountNumber === accountNumber ? updated : a)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update handover status");
+    } finally {
+      setHandingOver(null);
+    }
+  };
+
   const rows = useMemo(() => {
     const today = Date.now();
     return accounts
@@ -107,7 +121,7 @@ export function Arrears() {
         <CH title="Accounts in Arrears" sub="Sorted by age of oldest unpaid invoice" icon={IC.alert} accent={T.amber} />
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <TRow cols={["Account", "Consumer", "Municipality", "Tariff", "Balance", "Days Overdue", "Ageing", "Status"]} />
+            <TRow cols={["Account", "Consumer", "Municipality", "Tariff", "Balance", "Days Overdue", "Ageing", "Status", ""]} />
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} style={{ borderBottom: `1px solid ${T.g700}` }}>
@@ -119,11 +133,22 @@ export function Arrears() {
                   <td style={{ padding: "10px 14px", fontSize: 12, color: r.daysOverdue > 0 ? T.redT : T.g200 }}>{Math.max(r.daysOverdue, 0)}</td>
                   <td style={{ padding: "10px 14px", fontSize: 11, color: r.bucket === "Current" ? T.g200 : T.amberT }}>{r.bucket}</td>
                   <td style={{ padding: "10px 14px" }}><Badge v={r.status} /></td>
+                  <td style={{ padding: "10px 14px" }}>
+                    {(r.daysOverdue >= 90 || r.status === "handover") && (
+                      <Btn
+                        ch={handingOver === r.accountNumber ? <Spin s={12} /> : r.status === "handover" ? "Pull back" : "Send to Legal"}
+                        sm
+                        v={r.status === "handover" ? "ghost" : "dark"}
+                        onClick={() => toggleHandover(r.accountNumber)}
+                        disabled={handingOver === r.accountNumber}
+                      />
+                    )}
+                  </td>
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ padding: 18, fontSize: 12, color: T.g200 }}>No accounts in arrears — the whole book is settled.</td>
+                  <td colSpan={9} style={{ padding: 18, fontSize: 12, color: T.g200 }}>No accounts in arrears — the whole book is settled.</td>
                 </tr>
               )}
             </tbody>

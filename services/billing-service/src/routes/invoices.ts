@@ -1,17 +1,23 @@
 import { Router } from "express";
-import { callerFrom, forbidForeignAccount } from "../identity.js";
+import { callerFrom, forbidForeignAccount, officialMunicipalityScope } from "../identity.js";
 import { applyPaymentToInvoice, getInvoiceById, listInvoices } from "../repository.js";
 
 export const invoicesRouter: Router = Router();
 
 invoicesRouter.get("/", async (req, res) => {
   const caller = callerFrom(req);
+  const scope = officialMunicipalityScope(req);
   const { accountNumber, status } = req.query;
   const result = await listInvoices({
     // Consumers always get their own invoices, whatever the query says.
     accountNumber:
       caller.role === "consumer" ? caller.accountNumber : typeof accountNumber === "string" ? accountNumber : undefined,
     status: typeof status === "string" ? status : undefined,
+    // An official's own municipality always wins — the same boundary
+    // already enforced on accounts and meters (this route was the one gap:
+    // an official could otherwise read invoices for any citizen on the
+    // platform, not just their own book).
+    municipality: caller.role === "consumer" ? undefined : scope,
   });
   res.json({ ok: true, data: result, meta: { service: "billing-service", tookMs: 0 } });
 });

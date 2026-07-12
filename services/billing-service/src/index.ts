@@ -7,6 +7,7 @@ import { billingRunsRouter } from "./routes/billingRuns.js";
 import { bankingRouter } from "./routes/banking.js";
 import { disputesRouter } from "./routes/disputes.js";
 import { subsidyRouter } from "./routes/subsidy.js";
+import { tariffsRouter } from "./routes/tariffs.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 4001);
@@ -25,6 +26,7 @@ app.use("/billing-runs", billingRunsRouter);
 app.use("/banking", bankingRouter);
 app.use("/disputes", disputesRouter);
 app.use("/subsidy", subsidyRouter);
+app.use("/tariffs", tariffsRouter);
 
 // Safety net: any error forwarded via next(err) — including from asyncHandler
 // on every route above — lands here as a clean 500 instead of crashing the

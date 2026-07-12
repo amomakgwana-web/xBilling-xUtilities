@@ -40,3 +40,18 @@ export const meterFaults = meteringSchema.table("meter_faults", {
   status: text("status").notNull(),
   reportedAt: timestamp("reported_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Persisted record of every prepaid token issued — the vend route used to
+ * generate a token and hand it back without keeping any trace of it. */
+export const vendedTokens = meteringSchema.table("vended_tokens", {
+  id: text("id").primaryKey(),
+  meterId: text("meter_id")
+    .notNull()
+    .references(() => meters.id),
+  serial: text("serial").notNull(),
+  accountNumber: text("account_number").notNull(),
+  amount: numeric("amount").notNull(),
+  units: numeric("units").notNull(),
+  token: text("token").notNull(),
+  vendedAt: timestamp("vended_at", { withTimezone: true }).notNull().defaultNow(),
+});

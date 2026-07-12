@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, lte, or } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
 import type {
   Account,
   BankingDetails,
@@ -93,6 +93,11 @@ export async function getAccountByNumber(accountNumber: string): Promise<Account
   return rows[0] ? toAccount(rows[0]) : null;
 }
 
+export async function setAccountStatus(accountNumber: string, status: string): Promise<Account | null> {
+  const rows = await db.update(accounts).set({ status }).where(eq(accounts.accountNumber, accountNumber)).returning();
+  return rows[0] ? toAccount(rows[0]) : null;
+}
+
 export async function adjustAccountBalance(accountNumber: string, delta: number): Promise<void> {
   const account = await getAccountByNumber(accountNumber);
   if (!account) return;
@@ -103,7 +108,7 @@ export async function adjustAccountBalance(accountNumber: string, delta: number)
     .where(eq(accounts.accountNumber, accountNumber));
 }
 
-export async function listInvoices(filters: { accountNumber?: string; status?: string }): Promise<Invoice[]> {
+export async function listInvoices(filters: { accountNumber?: string; status?: string; municipality?: string }): Promise<Invoice[]> {
   const conditions = [];
   if (filters.accountNumber) conditions.push(eq(invoices.accountNumber, filters.accountNumber));
   if (filters.status) conditions.push(eq(invoices.status, filters.status));
@@ -111,7 +116,13 @@ export async function listInvoices(filters: { accountNumber?: string; status?: s
     where: conditions.length ? and(...conditions) : undefined,
     with: { lines: true },
   });
-  return rows.map(toInvoice);
+  const result = rows.map(toInvoice);
+  if (!filters.municipality) return result;
+  // Invoices don't carry municipality directly — resolve via the account,
+  // the same pattern used for disputes.
+  const scoped = await listAccounts({ municipality: filters.municipality });
+  const accountNumbers = new Set(scoped.map((a) => a.accountNumber));
+  return result.filter((i) => accountNumbers.has(i.accountNumber));
 }
 
 export async function getInvoiceById(id: string): Promise<Invoice | null> {
@@ -147,7 +158,12 @@ export async function getTariff(code: string, onDate: string): Promise<Tariff | 
     .limit(1);
   const row = rows[0];
   if (!row) return null;
+  return toTariff(row);
+}
+
+function toTariff(row: typeof tariffs.$inferSelect): Tariff {
   return {
+    id: row.id,
     code: row.code,
     description: row.description,
     electricityPerKwh: Number(row.electricityPerKwh),
@@ -158,6 +174,65 @@ export async function getTariff(code: string, onDate: string): Promise<Tariff | 
     validFrom: row.validFrom,
     validTo: row.validTo ?? undefined,
   };
+}
+
+/** Every tariff row across every code, newest first — the full effective-
+ * dating history, not just what's active today. */
+export async function listTariffs(): Promise<Tariff[]> {
+  const rows = await db.select().from(tariffs).orderBy(desc(tariffs.validFrom));
+  return rows.map(toTariff);
+}
+
+/**
+ * Schedules a rate change: inserts a new effective-dated row for `code`.
+ * Does not touch prior rows — `getTariff` already picks whichever row is in
+ * force on a given date, so old invoices keep referencing what they were
+ * actually billed at. If a currently open-ended row exists for this code
+ * (validTo null) and the new row starts after it, that older row is closed
+ * off the day before the new one starts so the two periods don't overlap.
+ */
+export async function createTariff(input: {
+  code: string;
+  description: string;
+  electricityPerKwh: number;
+  waterPerKl: number;
+  refuseMonthly: number;
+  sewerMonthly: number;
+  vatRate: number;
+  validFrom: string;
+}): Promise<Tariff> {
+  const openEnded = await db
+    .select()
+    .from(tariffs)
+    .where(and(eq(tariffs.code, input.code), isNull(tariffs.validTo)))
+    .orderBy(desc(tariffs.validFrom))
+    .limit(1);
+  const previous = openEnded[0];
+  if (previous && previous.validFrom < input.validFrom) {
+    const dayBefore = new Date(input.validFrom);
+    dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
+    await db
+      .update(tariffs)
+      .set({ validTo: dayBefore.toISOString().slice(0, 10) })
+      .where(eq(tariffs.id, previous.id));
+  }
+
+  const rows = await db
+    .insert(tariffs)
+    .values({
+      code: input.code,
+      description: input.description,
+      electricityPerKwh: String(input.electricityPerKwh),
+      waterPerKl: String(input.waterPerKl),
+      refuseMonthly: String(input.refuseMonthly),
+      sewerMonthly: String(input.sewerMonthly),
+      vatRate: String(input.vatRate),
+      validFrom: input.validFrom,
+    })
+    .returning();
+  const row = rows[0];
+  if (!row) throw new Error("Failed to create tariff");
+  return toTariff(row);
 }
 
 /** Invoice + lines + balance increase, atomically — one billed account per transaction. */
@@ -335,7 +410,21 @@ function toDispute(row: typeof disputes.$inferSelect): Dispute {
   };
 }
 
-let disputeSeq = 100;
+/**
+ * Next `PREFIX-<n>` id for a table, derived from the highest numeric suffix
+ * already stored rather than an in-memory counter — a counter seeded at 100
+ * on every process start collides with rows a previous process already
+ * persisted (hit in practice: a service restart after a prior run had
+ * already written DSP-100/SUB-100).
+ */
+async function nextSequentialId(prefix: string, table: "disputes" | "subsidy_applications"): Promise<string> {
+  const rows = await db.execute<{ max: number | null }>(
+    sql`select max(cast(substring(id from '[0-9]+$') as integer)) as max from billing.${sql.raw(table)}`,
+  );
+  const max = rows[0]?.max ?? 99;
+  return `${prefix}-${max + 1}`;
+}
+
 export async function listDisputes(filters: { accountNumber?: string; municipality?: string }): Promise<Dispute[]> {
   if (filters.municipality && !filters.accountNumber) {
     // Disputes don't carry municipality directly — resolve via the account.
@@ -358,7 +447,7 @@ export async function createDispute(input: {
   reason: string;
   description: string;
 }): Promise<Dispute> {
-  const id = `DSP-${disputeSeq++}`;
+  const id = await nextSequentialId("DSP", "disputes");
   const rows = await db
     .insert(disputes)
     .values({
@@ -414,17 +503,17 @@ function toSubsidyApplication(row: typeof subsidyApplications.$inferSelect): Sub
   };
 }
 
-let subsidySeq = 100;
 export async function applyForSubsidy(input: {
   accountNumber: string;
   householdIncome: number;
   householdSize: number;
 }): Promise<SubsidyApplication> {
   const subsidyPercent = calculateSubsidyPercent(input.householdIncome);
+  const id = await nextSequentialId("SUB", "subsidy_applications");
   const rows = await db
     .insert(subsidyApplications)
     .values({
-      id: `SUB-${subsidySeq++}`,
+      id,
       accountNumber: input.accountNumber,
       householdIncome: String(input.householdIncome),
       householdSize: input.householdSize,

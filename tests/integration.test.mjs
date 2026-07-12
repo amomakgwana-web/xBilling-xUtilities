@@ -205,6 +205,15 @@ test("an official's book is scoped to their own municipality, even with a query 
   const meters = await get("/metering/meters?municipality=CoJ", token);
   assert.equal(meters.status, 200);
   for (const m of meters.body.data) assert.equal(m.municipality, "Ekurhuleni");
+
+  // Invoices don't carry municipality directly (resolved via account), which
+  // is exactly why this route was the one gap Phase 2's scoping pass missed
+  // — an official could read invoices for any citizen on the platform.
+  const ekurhuleniAccounts = new Set(accounts.body.data.map((a) => a.accountNumber));
+  const invoices = await get("/billing/invoices", token);
+  assert.equal(invoices.status, 200);
+  assert.ok(invoices.body.data.length > 0, "fixture must have at least one invoice in Ekurhuleni to make this test meaningful");
+  for (const inv of invoices.body.data) assert.ok(ekurhuleniAccounts.has(inv.accountNumber));
 });
 
 test("an operator's book is unrestricted across municipalities", async () => {
@@ -281,15 +290,21 @@ test("payment plans: citizen sets up an instalment plan and cannot double up", a
   const account = await get("/billing/accounts/WE-2024-00421", token);
   assert.ok(account.body.data.balance > 0, "fixture account must carry a balance for this test to be meaningful");
 
-  const plan = await post("/payments/plans", token, {
+  // Idempotent against a persistent database: an earlier run against this
+  // same fixture account may already have an active plan on file, which
+  // the one-active-plan-per-account rule should reject just as validly as
+  // the explicit duplicate attempt below.
+  const attempt = await post("/payments/plans", token, {
     accountNumber: "WE-2024-00421",
     consumerName: "Thandi Cele",
     totalAmount: account.body.data.balance,
     installments: 6,
   });
-  assert.equal(plan.status, 201);
-  assert.equal(plan.body.data.status, "active");
-  assert.ok(Math.abs(plan.body.data.installmentAmount * 6 - account.body.data.balance) < 0.02);
+  assert.ok([201, 409].includes(attempt.status));
+  if (attempt.status === 201) {
+    assert.equal(attempt.body.data.status, "active");
+    assert.ok(Math.abs(attempt.body.data.installmentAmount * 6 - account.body.data.balance) < 0.02);
+  }
 
   const duplicate = await post("/payments/plans", token, {
     accountNumber: "WE-2024-00421",
@@ -302,7 +317,7 @@ test("payment plans: citizen sets up an instalment plan and cannot double up", a
   const { body: opAuth } = await login("operator@xplatform.co.za", "Operator!2026");
   const allPlans = await get("/payments/plans", opAuth.data.token);
   assert.equal(allPlans.status, 200);
-  assert.ok(allPlans.body.data.some((p) => p.id === plan.body.data.id));
+  assert.ok(allPlans.body.data.some((p) => p.accountNumber === "WE-2024-00421" && p.status === "active"));
 });
 
 test("indigent subsidy: tiered eligibility is computed server-side, not trusted from the client", async () => {
@@ -375,4 +390,107 @@ test("disputes: citizen raises against their own invoice; official in the same m
   const seen = citizenView.body.data.find((d) => d.id === raised.body.data.id);
   assert.equal(seen.status, "resolved");
   assert.equal(seen.resolutionNote, "Reading verified correct against the meter log.");
+});
+
+test("tariffs: everyone can read the book, only operators may schedule a rate change", async () => {
+  const { body: citizenAuth } = await login("thandi.cele@example.co.za", "Citizen!2026");
+  const readAsCitizen = await get("/billing/tariffs", citizenAuth.data.token);
+  assert.equal(readAsCitizen.status, 200);
+  assert.ok(readAsCitizen.body.data.length > 0);
+
+  const { body: officialAuth } = await login("official@ekurhuleni.gov.za", "Official!2026");
+  const officialAttempt = await post("/billing/tariffs", officialAuth.data.token, {
+    code: "RES-STD",
+    description: "Residential standard",
+    electricityPerKwh: 2.5,
+    waterPerKl: 29,
+    refuseMonthly: 215,
+    sewerMonthly: 190,
+    vatRate: 0.15,
+    validFrom: "2099-01-01",
+  });
+  assert.equal(officialAttempt.status, 403);
+
+  const { body: opAuth } = await login("operator@xplatform.co.za", "Operator!2026");
+  const period = `test-tariff-${Date.now()}`;
+  const created = await post("/billing/tariffs", opAuth.data.token, {
+    code: period,
+    description: "Test tariff",
+    electricityPerKwh: 3,
+    waterPerKl: 30,
+    refuseMonthly: 200,
+    sewerMonthly: 180,
+    vatRate: 0.15,
+    validFrom: "2099-01-01",
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.data.code, period);
+
+  const list = await get("/billing/tariffs", opAuth.data.token);
+  assert.ok(list.body.data.some((t) => t.code === period));
+});
+
+test("legal/handover: staff may escalate and pull back an account, scoped to the official's municipality", async () => {
+  const { body: officialAuth } = await login("official@ekurhuleni.gov.za", "Official!2026");
+  const officialToken = officialAuth.data.token;
+
+  const { body: citizenAuth } = await login("thandi.cele@example.co.za", "Citizen!2026");
+  const citizenAttempt = await post("/billing/accounts/WE-2024-00421/handover", citizenAuth.data.token);
+  assert.equal(citizenAttempt.status, 403);
+
+  const foreignAccount = await post("/billing/accounts/TSH-2025-00012/handover", officialToken);
+  assert.equal(foreignAccount.status, 403);
+
+  const escalated = await post("/billing/accounts/WE-2024-00421/handover", officialToken);
+  assert.equal(escalated.status, 200);
+  assert.equal(escalated.body.data.status, "handover");
+
+  const listed = await get("/billing/accounts?status=handover", officialToken);
+  assert.ok(listed.body.data.some((a) => a.accountNumber === "WE-2024-00421"));
+
+  const pulledBack = await post("/billing/accounts/WE-2024-00421/handover", officialToken);
+  assert.equal(pulledBack.status, 200);
+  assert.equal(pulledBack.body.data.status, "overdue");
+});
+
+test("API keys: operator-only lifecycle, secret shown once, officials forbidden", async () => {
+  const { body: officialAuth } = await login("official@ekurhuleni.gov.za", "Official!2026");
+  const officialAttempt = await get("/platform/api-keys", officialAuth.data.token);
+  assert.equal(officialAttempt.status, 403);
+
+  const { body: opAuth } = await login("operator@xplatform.co.za", "Operator!2026");
+  const opToken = opAuth.data.token;
+
+  const created = await post("/platform/api-keys", opToken, { name: `test-key-${Date.now()}` });
+  assert.equal(created.status, 201);
+  assert.ok(created.body.data.key.startsWith("xpk_"));
+  assert.equal(created.body.data.keyPrefix, created.body.data.key.slice(0, 12));
+
+  const list = await get("/platform/api-keys", opToken);
+  assert.equal(list.status, 200);
+  const listed = list.body.data.find((k) => k.id === created.body.data.id);
+  assert.ok(listed);
+  assert.equal(listed.key, undefined, "the plaintext secret must never appear in the list response");
+
+  const revoked = await post(`/platform/api-keys/${created.body.data.id}/revoke`, opToken);
+  assert.equal(revoked.status, 200);
+  assert.ok(revoked.body.data.revokedAt);
+});
+
+test("electricity: vending a prepaid token persists it to history, visible to the account holder and staff", async () => {
+  const { body: citizenAuth } = await login("thandi.cele@example.co.za", "Citizen!2026");
+  const citizenToken = citizenAuth.data.token;
+
+  const vend = await post("/metering/meters/vend-token", citizenToken, { serial: "MTR-WE-004421", amount: 50 });
+  assert.equal(vend.status, 200);
+
+  const ownHistory = await get("/metering/meters/vended-tokens", citizenToken);
+  assert.equal(ownHistory.status, 200);
+  assert.ok(ownHistory.body.data.some((t) => t.token === vend.body.data.token));
+  assert.ok(ownHistory.body.data.every((t) => t.accountNumber === "WE-2024-00421"));
+
+  const { body: officialAuth } = await login("official@ekurhuleni.gov.za", "Official!2026");
+  const staffHistory = await get("/metering/meters/vended-tokens", officialAuth.data.token);
+  assert.equal(staffHistory.status, 200);
+  assert.ok(staffHistory.body.data.some((t) => t.token === vend.body.data.token));
 });
