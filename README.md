@@ -64,7 +64,7 @@ provisioned the project, or rotate it via the Supabase SQL editor:
 ALTER ROLE app_service WITH PASSWORD 'new-password-here';
 ```
 
-**Row Level Security is enabled on all 19 tables**, each with one policy
+**Row Level Security is enabled on all 26 tables**, each with one policy
 granting `app_service` unrestricted access — the only role any service
 connects as. No policy exists for the `anon`/`authenticated` PostgREST
 roles, so they default to denied; Supabase's security advisor reports zero

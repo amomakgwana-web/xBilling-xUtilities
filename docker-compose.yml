@@ -63,7 +63,10 @@ services:
       PORT: 4004
       CORS_ORIGIN: "*"
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required — see README.md > Persistence}
+      # Optional — unset means the mock gateway/fallback copy is used instead:
       # ANTHROPIC_API_KEY: set this to enable live AI insight/draft generation.
+      # BULKSMS_TOKEN_ID / BULKSMS_TOKEN_SECRET: set both to send real SMS.
+      # RESEND_API_KEY / RESEND_FROM: set both to send real email.
     ports:
       - "4004:4004"
     networks: [xplatform]

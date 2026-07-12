@@ -14,6 +14,7 @@
     "dev:apps": "pnpm --filter \"./apps/*\" --parallel run dev",
     "typecheck": "pnpm -r run typecheck",
     "test": "node --test tests/",
+    "smoke-test": "node scripts/smoke-test.mjs",
     "clean": "pnpm -r run clean"
   },
   "devDependencies": {
