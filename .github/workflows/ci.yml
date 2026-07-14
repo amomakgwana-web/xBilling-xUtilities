@@ -23,7 +23,11 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://postgres@localhost:5432/postgres
-      JWT_SECRET: ci-only-secret
+      # Dummy values — the frontend build only needs these to exist and be
+      # syntactically valid, not to reach a real project (nothing in a
+      # `tsc -b` + `vite build` pass talks to Supabase over the network).
+      VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-placeholder-anon-key
     steps:
       - uses: actions/checkout@v4
 
@@ -40,29 +44,9 @@ jobs:
       - name: Build all packages
         run: pnpm run build
 
-      - name: Apply database schema and seed
+      - name: Replay every db/*.sql migration
         run: |
           psql "$DATABASE_URL" -c "create role app_service login;"
           for f in db/*.sql; do
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
           done
-
-      - name: Boot services
-        run: |
-          for s in gateway billing-service payments-service metering-service comms-service compliance-service; do
-            (cd services/$s && node dist/index.js > /tmp/$s.log 2>&1 &)
-          done
-          for port in 4000 4001 4002 4003 4004 4005; do
-            for i in $(seq 1 30); do
-              curl -sf "http://localhost:$port/health" > /dev/null && break
-              [ "$i" = 30 ] && { echo "service on :$port failed to start"; cat /tmp/*.log; exit 1; }
-              sleep 1
-            done
-          done
-
-      - name: Integration tests
-        run: node --test tests/
-
-      - name: Show service logs on failure
-        if: failure()
-        run: tail -n 50 /tmp/*.log || true

@@ -2,19 +2,15 @@
   "name": "xbilling-xutilities-platform",
   "version": "0.1.0",
   "private": true,
-  "description": "xBilling / xUtilities microservices platform monorepo",
+  "description": "xBilling / xUtilities municipal billing platform — single-file frontend, Supabase backend",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "setup": "node scripts/setup-env.mjs && pnpm install",
     "build": "pnpm -r --workspace-concurrency=1 run build",
-    "dev": "pnpm -r --parallel run dev",
-    "dev:services": "pnpm --filter \"./services/*\" --parallel run dev",
-    "dev:apps": "pnpm --filter \"./apps/*\" --parallel run dev",
+    "dev": "pnpm --filter @xplatform/web-platform run dev",
     "typecheck": "pnpm -r run typecheck",
-    "test": "node --test tests/",
-    "smoke-test": "node scripts/smoke-test.mjs",
     "clean": "pnpm -r run clean"
   },
   "devDependencies": {
