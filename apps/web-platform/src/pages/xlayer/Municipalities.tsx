@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { T, IC, Card, CH, SectionTitle, Btn, Input, Spin, LoadingState, ErrorState } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
 
 interface Municipality {
   id: string;
@@ -23,8 +24,7 @@ export function Municipalities() {
   const load = () => {
     setLoading(true);
     setError(null);
-    api
-      .get<Municipality[]>("/platform/municipalities")
+    unwrap<Municipality[]>(supabase.from("municipalities").select("*"))
       .then(setRows)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load municipalities"))
       .finally(() => setLoading(false));
@@ -40,12 +40,15 @@ export function Municipalities() {
   const save = async (id: string) => {
     setSaving(true);
     try {
-      const updated = await api.patch<Municipality>(`/platform/municipalities/${id}`, {
-        name: draft.name,
-        province: draft.province,
-        brandColor: draft.brandColor,
-        contactEmail: draft.contactEmail,
-        contactPhone: draft.contactPhone,
+      const updated = await callRpc<Municipality>("edit_municipality", {
+        p_id: id,
+        p_patch: {
+          name: draft.name,
+          province: draft.province,
+          brandColor: draft.brandColor,
+          contactEmail: draft.contactEmail,
+          contactPhone: draft.contactPhone,
+        },
       });
       setRows((prev) => prev.map((m) => (m.id === id ? updated : m)));
       setEditing(null);

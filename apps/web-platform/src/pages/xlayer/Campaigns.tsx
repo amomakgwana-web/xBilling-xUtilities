@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Campaign } from "@xplatform/shared-types";
 import { T, IC, Card, CH, SectionTitle, Badge, Btn, Input, Sel, Spin, LoadingState, ErrorState, fmtN } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callEdgeFunction } from "../../lib/db";
 
 export function Campaigns() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -14,8 +15,7 @@ export function Campaigns() {
 
   const load = () => {
     setError(null);
-    return api
-      .get<Campaign[]>("/comms/campaigns")
+    return unwrap<Campaign[]>(supabase.from("campaigns").select("*").order("createdAt", { ascending: false }))
       .then(setCampaigns)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load campaigns"))
       .finally(() => setLoading(false));
@@ -27,14 +27,19 @@ export function Campaigns() {
 
   const createCampaign = async () => {
     if (!name.trim()) return;
-    await api.post("/comms/campaigns", { name, type, municipality: "All" });
+    // No recipients here, so the Edge Function's dispatch branch is a
+    // no-op and this only exercises the create_campaign RPC underneath —
+    // same "scheduled" shell campaign the old POST /comms/campaigns with
+    // no recipients produced.
+    await callEdgeFunction("campaign-send", { name, type, municipality: "All" });
     setName("");
     await load();
   };
 
   const draftSms = async () => {
     setDrafting(true);
-    const result = await api.post<{ text: string; mocked: boolean }>("/comms/insight/draft-sms", {
+    const result = await callEdgeFunction<{ text: string; mocked: boolean }>("ai-insight", {
+      kind: "draft-sms",
       brief: name || "Final demand for overdue accounts 90+ days",
     });
     setDraft(result);

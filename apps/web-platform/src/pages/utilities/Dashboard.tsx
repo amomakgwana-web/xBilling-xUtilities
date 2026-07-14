@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Meter, MeterFault } from "@xplatform/shared-types";
 import { T, IC, Card, CH, KpiCard, SectionTitle, Badge, LiveDot, LoadingState, ErrorState, fmtN } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap } from "../../lib/db";
 
 export function UtilitiesDashboard() {
   const navigate = useNavigate();
@@ -14,7 +15,10 @@ export function UtilitiesDashboard() {
   const load = () => {
     setLoading(true);
     setError(null);
-    Promise.all([api.get<Meter[]>("/metering/meters"), api.get<MeterFault[]>("/metering/faults")])
+    Promise.all([
+      unwrap<Meter[]>(supabase.from("meters").select("*")),
+      unwrap<MeterFault[]>(supabase.from("meter_faults").select("*")),
+    ])
       .then(([m, f]) => {
         setMeters(m);
         setFaults(f);

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Account, Campaign, Invoice } from "@xplatform/shared-types";
 import { T, IC, Card, CH, KpiCard, TRow, SectionTitle, Badge, Btn, Spin, LoadingState, ErrorState, fmtR } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc, callEdgeFunction } from "../../lib/db";
 import { useAuth } from "../../auth/AuthContext";
 
 const BUCKETS = ["Current", "1–30 days", "31–60 days", "61–90 days", "90+ days"] as const;
@@ -26,7 +27,7 @@ export function Arrears() {
   const load = () => {
     setLoading(true);
     setError(null);
-    Promise.all([api.get<Account[]>("/billing/accounts"), api.get<Invoice[]>("/billing/invoices")])
+    Promise.all([unwrap<Account[]>(supabase.from("accounts").select("*")), unwrap<Invoice[]>(supabase.from("invoices").select("*"))])
       .then(([acc, inv]) => {
         setAccounts(acc);
         setInvoices(inv);
@@ -42,7 +43,7 @@ export function Arrears() {
   const toggleHandover = async (accountNumber: string) => {
     setHandingOver(accountNumber);
     try {
-      const updated = await api.post<Account>(`/billing/accounts/${accountNumber}/handover`);
+      const updated = await callRpc<Account>("toggle_handover", { p_account_number: accountNumber });
       setAccounts((prev) => prev.map((a) => (a.accountNumber === accountNumber ? updated : a)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update handover status");
@@ -70,15 +71,15 @@ export function Arrears() {
   const sendReminders = async () => {
     setSending(true);
     try {
-      const campaign = await api.post<Campaign>("/comms/campaigns", {
+      const campaign = await callEdgeFunction<Campaign>("campaign-send", {
         name: `Arrears reminder — ${new Date().toISOString().slice(0, 10)}`,
         type: "SMS",
         // Officials only ever see their own municipality's book (server-
         // enforced), so the campaign is scoped the same way; operators see
         // the whole platform's arrears, so their reminder blast stays "All".
         municipality: session?.municipalityId ?? "All",
-        // Real MSISDNs from the billing accounts — live SMS when the comms
-        // gateway has BulkSMS credentials, mock queue otherwise.
+        // Real MSISDNs from the billing accounts — live SMS when the Edge
+        // Function has BulkSMS credentials configured, mock queue otherwise.
         recipients: rows.map((r) => r.phone ?? r.accountNumber),
         message: "Your municipal account is in arrears. Pay via the xBilling portal, EFT or USSD *120# to avoid interruption.",
       });

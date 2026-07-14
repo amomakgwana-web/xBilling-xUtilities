@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { VendedToken } from "@xplatform/shared-types";
 import { T, IC, Card, CH, KpiCard, TRow, SectionTitle, LoadingState, ErrorState, fmtN, fmtR } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap } from "../../lib/db";
 
 export function Electricity() {
   const [tokens, setTokens] = useState<VendedToken[]>([]);
@@ -11,8 +12,7 @@ export function Electricity() {
   const load = () => {
     setLoading(true);
     setError(null);
-    api
-      .get<VendedToken[]>("/metering/meters/vended-tokens")
+    unwrap<VendedToken[]>(supabase.from("vended_tokens").select("*").order("vendedAt", { ascending: false }))
       .then(setTokens)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load token history"))
       .finally(() => setLoading(false));

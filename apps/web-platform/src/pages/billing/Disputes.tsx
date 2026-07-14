@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Dispute, Invoice } from "@xplatform/shared-types";
 import { T, IC, Card, CH, SectionTitle, Badge, Btn, Input, Sel, Spin, LoadingState, ErrorState, fmtR } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
 import { useAccount } from "../../AccountContext";
 
 const REASONS = ["Incorrect meter reading", "Billed for wrong tariff", "Duplicate charge", "Payment not reflected", "Other"];
@@ -21,8 +22,8 @@ export function Disputes() {
     setLoading(true);
     setError(null);
     Promise.all([
-      api.get<Dispute[]>(`/billing/disputes?accountNumber=${accountNumber}`),
-      api.get<Invoice[]>(`/billing/invoices?accountNumber=${accountNumber}`),
+      unwrap<Dispute[]>(supabase.from("disputes").select("*").eq("accountNumber", accountNumber).order("createdAt", { ascending: false })),
+      unwrap<Invoice[]>(supabase.from("invoices").select("*").eq("accountNumber", accountNumber).order("issueDate", { ascending: false })),
     ])
       .then(([d, inv]) => {
         setDisputes(d);
@@ -39,7 +40,12 @@ export function Disputes() {
     setSubmitting(true);
     setError(null);
     try {
-      const dispute = await api.post<Dispute>("/billing/disputes", { accountNumber, invoiceId, reason, description });
+      const dispute = await callRpc<Dispute>("create_dispute", {
+        p_account_number: accountNumber,
+        p_invoice_id: invoiceId,
+        p_reason: reason,
+        p_description: description,
+      });
       setDisputes((prev) => [dispute, ...prev]);
       setDescription("");
     } catch (err) {

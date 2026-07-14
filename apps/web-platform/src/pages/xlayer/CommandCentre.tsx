@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { Account, Campaign, ComplianceScore, PaymentMethod, PlatformStatus } from "@xplatform/shared-types";
+import type { Account, Campaign, ComplianceScore, PaymentMethod } from "@xplatform/shared-types";
 import { T, IC, Card, CH, KpiCard, SectionTitle, Badge, LiveDot, Btn, Spin, LoadingState, ErrorState, fmtN, fmtR } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callEdgeFunction } from "../../lib/db";
 
 interface ChatbotStats {
   total: number;
@@ -17,7 +18,6 @@ export function CommandCentre() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [chatStats, setChatStats] = useState<ChatbotStats | null>(null);
   const [compliance, setCompliance] = useState<ComplianceScore | null>(null);
-  const [platform, setPlatform] = useState<PlatformStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [insight, setInsight] = useState<{ text: string; mocked: boolean } | null>(null);
@@ -27,20 +27,19 @@ export function CommandCentre() {
     setLoading(true);
     setError(null);
     Promise.all([
-      api.get<Account[]>("/billing/accounts"),
-      api.get<PaymentMethod[]>("/payments/methods"),
-      api.get<Campaign[]>("/comms/campaigns"),
-      api.get<ChatbotStats>("/comms/chatbot/stats"),
-      api.get<ComplianceScore>("/compliance/score"),
-      api.get<PlatformStatus>("/platform/status"),
+      unwrap<Account[]>(supabase.from("accounts").select("*")),
+      unwrap<PaymentMethod[]>(supabase.from("payment_methods").select("*")),
+      unwrap<Campaign[]>(supabase.from("campaigns").select("*")),
+      unwrap<{ resolved: boolean; escalated: boolean }[]>(supabase.from("chat_sessions").select("resolved,escalated")),
+      unwrap<{ score: number }>(supabase.from("compliance_score").select("score").single()),
+      unwrap<ComplianceScore["frameworks"]>(supabase.from("frameworks").select("*")),
     ])
-      .then(([acc, mth, camp, chat, comp, plat]) => {
+      .then(([acc, mth, camp, chats, scoreRow, frameworks]) => {
         setAccounts(acc);
         setMethods(mth);
         setCampaigns(camp);
-        setChatStats(chat);
-        setCompliance(comp);
-        setPlatform(plat);
+        setChatStats({ total: chats.length, resolved: chats.filter((c) => c.resolved).length, escalated: chats.filter((c) => c.escalated).length });
+        setCompliance({ score: scoreRow.score, frameworks });
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load platform data"))
       .finally(() => setLoading(false));
@@ -52,7 +51,7 @@ export function CommandCentre() {
     setInsightLoading(true);
     const outstanding = accounts.reduce((sum, a) => sum + a.balance, 0);
     const summary = `Outstanding book ${fmtR(outstanding)} across ${accounts.length} accounts, ${methods.filter((m) => m.status === "active").length} active payment rails, compliance score ${compliance?.score ?? "n/a"}/100, ${chatStats?.total ?? 0} chatbot sessions today (${chatStats?.resolved ?? 0} resolved).`;
-    const result = await api.post<{ text: string; mocked: boolean }>("/comms/insight/platform", { summary });
+    const result = await callEdgeFunction<{ text: string; mocked: boolean }>("ai-insight", { kind: "platform", summary });
     setInsight(result);
     setInsightLoading(false);
   };
@@ -105,7 +104,7 @@ export function CommandCentre() {
               <span style={{ color: T.cyan, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>AI INSIGHT</span>
               <p style={{ fontSize: 12, color: T.white2, lineHeight: 1.65, margin: 0 }}>
                 {insight!.text}
-                {insight!.mocked && <span style={{ color: T.g200, fontStyle: "italic" }}> (canned response — set ANTHROPIC_API_KEY on comms-service for live analysis)</span>}
+                {insight!.mocked && <span style={{ color: T.g200, fontStyle: "italic" }}> (canned response — set ANTHROPIC_API_KEY as an Edge Function secret for live analysis)</span>}
               </p>
             </>
           )}
@@ -138,16 +137,20 @@ export function CommandCentre() {
         </Card>
 
         <Card>
-          <CH title="Platform Status" sub="Downstream services" icon={IC.server} pad={false} />
+          <CH title="Platform Status" sub="Direct Supabase architecture — no gateway to health-check" icon={IC.server} pad={false} />
           <div>
-            {platform?.services.map((s) => (
+            {[
+              { name: "Postgres + RLS", detail: "Row-level security on every table" },
+              { name: "Supabase Auth", detail: "JWT-based sessions, no custom token server" },
+              { name: "RPC functions", detail: "Business logic (db/012)" },
+              { name: "Edge Functions", detail: "AI insight · campaign dispatch" },
+            ].map((s) => (
               <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: `1px solid ${T.g700}` }}>
-                <LiveDot color={s.status === "live" ? T.green : s.status === "degraded" ? T.amber : T.red} />
+                <LiveDot color={T.green} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: T.white, textTransform: "capitalize" }}>{s.name}</div>
-                  <div style={{ fontSize: 10, color: T.g200 }}>{s.url}</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: T.white }}>{s.name}</div>
+                  <div style={{ fontSize: 10, color: T.g200 }}>{s.detail}</div>
                 </div>
-                <div style={{ fontSize: 11, color: T.g100, textAlign: "right" }}>{s.latencyMs !== undefined ? `${s.latencyMs}ms` : "—"}</div>
               </div>
             ))}
           </div>

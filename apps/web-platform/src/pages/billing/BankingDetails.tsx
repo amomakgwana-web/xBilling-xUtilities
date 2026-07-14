@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { BankingDetails as BankingDetailsType } from "@xplatform/shared-types";
 import { T, IC, Card, CH, SectionTitle, Btn, Input, Sel, Spin, LoadingState, ErrorState } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { callRpc } from "../../lib/db";
 import { useAccount } from "../../AccountContext";
 
 export function BankingDetails() {
@@ -18,37 +19,47 @@ export function BankingDetails() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const load = () => {
+  const load = async () => {
     setLoading(true);
     setError(null);
-    api
-      .get<BankingDetailsType>(`/billing/banking/${accountNumber}`)
-      .then((d) => {
-        setExisting(d);
-        setBankName(d.bankName);
-        setAccountHolder(d.accountHolder);
-        setBranchCode(d.branchCode);
-        setAccountType(d.accountType);
-        setDebitDay(String(d.debitDay));
-      })
-      .catch(() => setExisting(null))
-      .finally(() => setLoading(false));
+    try {
+      const { data, error: err } = await supabase.from("banking_details").select("*").eq("accountNumber", accountNumber).maybeSingle();
+      if (err) throw new Error(err.message);
+      if (!data) {
+        setExisting(null);
+        return;
+      }
+      const d = data as BankingDetailsType;
+      setExisting(d);
+      setBankName(d.bankName);
+      setAccountHolder(d.accountHolder);
+      setBranchCode(d.branchCode);
+      setAccountType(d.accountType);
+      setDebitDay(String(d.debitDay));
+    } catch {
+      setExisting(null);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(load, [accountNumber]);
+  useEffect(() => {
+    load();
+  }, [accountNumber]);
 
   const save = async () => {
     setSaving(true);
     setSaved(false);
     setError(null);
     try {
-      const updated = await api.put<BankingDetailsType>(`/billing/banking/${accountNumber}`, {
-        bankName,
-        accountHolder,
-        accountNumber: accountNo || undefined,
-        branchCode,
-        accountType,
-        debitDay: Number(debitDay),
+      const updated = await callRpc<BankingDetailsType>("upsert_banking_details", {
+        p_account_number: accountNumber,
+        p_bank_name: bankName,
+        p_account_holder: accountHolder,
+        p_branch_code: branchCode,
+        p_account_type: accountType,
+        p_debit_day: Number(debitDay),
+        p_bank_account_number: accountNo || undefined,
       });
       setExisting(updated);
       setAccountNo("");

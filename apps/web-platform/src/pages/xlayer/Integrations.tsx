@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { ApiKey, ApiKeyCreated, ComplianceScore, Integration } from "@xplatform/shared-types";
 import { T, IC, Card, CH, Tab, TRow, SectionTitle, Badge, Btn, Input, Spin, LoadingState, ErrorState } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
 
 function ApiKeys() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -15,8 +16,7 @@ function ApiKeys() {
   const load = () => {
     setLoading(true);
     setError(null);
-    api
-      .get<ApiKey[]>("/platform/api-keys")
+    unwrap<ApiKey[]>(supabase.from("api_keys").select("*").order("createdAt", { ascending: false }))
       .then(setKeys)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load API keys"))
       .finally(() => setLoading(false));
@@ -29,7 +29,7 @@ function ApiKeys() {
     setError(null);
     setJustCreated(null);
     try {
-      const created = await api.post<ApiKeyCreated>("/platform/api-keys", { name });
+      const created = await callRpc<ApiKeyCreated>("create_api_key", { p_name: name });
       setKeys((prev) => [created, ...prev]);
       setJustCreated(created);
       setName("");
@@ -43,7 +43,7 @@ function ApiKeys() {
   const revoke = async (id: string) => {
     setRevoking(id);
     try {
-      const updated = await api.post<ApiKey>(`/platform/api-keys/${id}/revoke`);
+      const updated = await callRpc<ApiKey>("revoke_api_key", { p_id: id });
       setKeys((prev) => prev.map((k) => (k.id === id ? updated : k)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to revoke key");
@@ -118,10 +118,14 @@ export function Integrations() {
   const load = () => {
     setLoading(true);
     setError(null);
-    Promise.all([api.get<Integration[]>("/compliance/integrations"), api.get<ComplianceScore>("/compliance/score")])
-      .then(([i, s]) => {
+    Promise.all([
+      unwrap<Integration[]>(supabase.from("integrations").select("*")),
+      unwrap<{ score: number }>(supabase.from("compliance_score").select("score").single()),
+      unwrap<ComplianceScore["frameworks"]>(supabase.from("frameworks").select("*")),
+    ])
+      .then(([i, scoreRow, frameworks]) => {
         setIntegrations(i);
-        setScore(s);
+        setScore({ score: scoreRow.score, frameworks });
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load integrations"))
       .finally(() => setLoading(false));

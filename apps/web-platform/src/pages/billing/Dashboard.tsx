@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Account, Invoice } from "@xplatform/shared-types";
 import { T, IC, Card, CH, KpiCard, SectionTitle, Badge, Btn, LoadingState, ErrorState, fmtR } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap } from "../../lib/db";
 import { useAccount } from "../../AccountContext";
 
 export function BillingDashboard() {
@@ -17,8 +18,8 @@ export function BillingDashboard() {
     setLoading(true);
     setError(null);
     Promise.all([
-      api.get<Account>(`/billing/accounts/${accountNumber}`),
-      api.get<Invoice[]>(`/billing/invoices?accountNumber=${accountNumber}`),
+      unwrap<Account>(supabase.from("accounts").select("*").eq("accountNumber", accountNumber).single()),
+      unwrap<Invoice[]>(supabase.from("invoices").select("*").eq("accountNumber", accountNumber).order("issueDate", { ascending: false })),
     ])
       .then(([acc, inv]) => {
         setAccount(acc);

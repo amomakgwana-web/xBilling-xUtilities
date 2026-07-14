@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Account } from "@xplatform/shared-types";
 import { T, IC, Card, CH, KpiCard, TRow, SectionTitle, Badge, Btn, Spin, LoadingState, ErrorState, fmtR } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
 
 export function LegalHandover() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -12,8 +13,7 @@ export function LegalHandover() {
   const load = () => {
     setLoading(true);
     setError(null);
-    api
-      .get<Account[]>("/billing/accounts?status=handover")
+    unwrap<Account[]>(supabase.from("accounts").select("*").eq("status", "handover"))
       .then(setAccounts)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load handover book"))
       .finally(() => setLoading(false));
@@ -24,7 +24,7 @@ export function LegalHandover() {
   const pullBack = async (accountNumber: string) => {
     setPulling(accountNumber);
     try {
-      await api.post(`/billing/accounts/${accountNumber}/handover`);
+      await callRpc("toggle_handover", { p_account_number: accountNumber });
       setAccounts((prev) => prev.filter((a) => a.accountNumber !== accountNumber));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to pull account back");

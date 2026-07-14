@@ -11,6 +11,7 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
     "@xplatform/shared-types": "workspace:*",
     "@xplatform/ui-kit": "workspace:*",
     "pdf-lib": "^1.17.1",
@@ -23,6 +24,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vite-plugin-singlefile": "^2.1.0"
   }
 }

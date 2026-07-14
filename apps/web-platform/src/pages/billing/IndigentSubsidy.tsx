@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { SubsidyApplication } from "@xplatform/shared-types";
 import { T, IC, Card, CH, SectionTitle, Badge, Btn, Input, Spin, LoadingState, ErrorState } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
 import { useAccount } from "../../AccountContext";
 
 export function IndigentSubsidy() {
@@ -16,8 +17,9 @@ export function IndigentSubsidy() {
   const load = () => {
     setLoading(true);
     setError(null);
-    api
-      .get<SubsidyApplication[]>(`/billing/subsidy?accountNumber=${accountNumber}`)
+    unwrap<SubsidyApplication[]>(
+      supabase.from("subsidy_applications").select("*").eq("accountNumber", accountNumber).order("appliedAt", { ascending: false }),
+    )
       .then(setApplications)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load subsidy applications"))
       .finally(() => setLoading(false));
@@ -29,10 +31,10 @@ export function IndigentSubsidy() {
     setApplying(true);
     setError(null);
     try {
-      const application = await api.post<SubsidyApplication>("/billing/subsidy/apply", {
-        accountNumber,
-        householdIncome: Number(householdIncome),
-        householdSize: Number(householdSize),
+      const application = await callRpc<SubsidyApplication>("apply_for_subsidy", {
+        p_account_number: accountNumber,
+        p_household_income: Number(householdIncome),
+        p_household_size: Number(householdSize),
       });
       setApplications((prev) => [application, ...prev]);
       setHouseholdIncome("");

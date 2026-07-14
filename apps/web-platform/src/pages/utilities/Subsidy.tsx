@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { SubsidyApplication } from "@xplatform/shared-types";
 import { T, IC, Card, CH, KpiCard, TRow, SectionTitle, Badge, LoadingState, ErrorState } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap } from "../../lib/db";
 
 export function Subsidy() {
   const [applications, setApplications] = useState<SubsidyApplication[]>([]);
@@ -11,8 +12,7 @@ export function Subsidy() {
   const load = () => {
     setLoading(true);
     setError(null);
-    api
-      .get<SubsidyApplication[]>("/billing/subsidy")
+    unwrap<SubsidyApplication[]>(supabase.from("subsidy_applications").select("*").order("appliedAt", { ascending: false }))
       .then(setApplications)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load subsidy applications"))
       .finally(() => setLoading(false));

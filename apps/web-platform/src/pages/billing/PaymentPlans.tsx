@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import type { Account, PaymentPlan } from "@xplatform/shared-types";
 import { T, IC, Card, CH, SectionTitle, Badge, Btn, Sel, Spin, LoadingState, ErrorState, fmtR } from "@xplatform/ui-kit";
-import { api } from "../../api";
-import { useAccount, DEMO_ACCOUNTS } from "../../AccountContext";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
+import { useAccount } from "../../AccountContext";
 
 const TERMS = [3, 6, 12];
 
@@ -18,7 +19,10 @@ export function PaymentPlans() {
   const load = () => {
     setLoading(true);
     setError(null);
-    Promise.all([api.get<Account>(`/billing/accounts/${accountNumber}`), api.get<PaymentPlan[]>(`/payments/plans?accountNumber=${accountNumber}`)])
+    Promise.all([
+      unwrap<Account>(supabase.from("accounts").select("*").eq("accountNumber", accountNumber).single()),
+      unwrap<PaymentPlan[]>(supabase.from("payment_plans").select("*").eq("accountNumber", accountNumber).order("createdAt", { ascending: false })),
+    ])
       .then(([acc, p]) => {
         setAccount(acc);
         setPlans(p);
@@ -33,13 +37,12 @@ export function PaymentPlans() {
     if (!account) return;
     setCreating(true);
     setError(null);
-    const consumerName = DEMO_ACCOUNTS.find((a) => a.accountNumber === accountNumber)?.name ?? "Consumer";
     try {
-      const plan = await api.post<PaymentPlan>("/payments/plans", {
-        accountNumber,
-        consumerName,
-        totalAmount: account.balance,
-        installments: Number(term),
+      const plan = await callRpc<PaymentPlan>("create_payment_plan", {
+        p_account_number: accountNumber,
+        p_consumer_name: account.consumerName,
+        p_total_amount: account.balance,
+        p_installments: Number(term),
       });
       setPlans((prev) => [plan, ...prev]);
     } catch (err) {

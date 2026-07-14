@@ -1,0 +1,78 @@
+name: Deploy to GitHub Pages
+
+# Replaces the raw-upload workflow removed earlier in this project's
+# history (it deployed source files directly with no build step, so the
+# site never actually worked). This one builds the single-file bundle
+# (vite-plugin-singlefile — see apps/web-platform/vite.config.ts) and
+# deploys only that.
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "apps/web-platform/**"
+      - "packages/shared-types/**"
+      - "packages/ui-kit/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Enable pnpm via corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: pnpm --filter @xplatform/shared-types --filter @xplatform/ui-kit run build
+
+      - name: Build web-platform (single-file)
+        working-directory: apps/web-platform
+        env:
+          # Safe to be a plain Actions secret rather than a fully public
+          # value: the anon key is meant for client-side use (RLS is what
+          # actually enforces access), but there's no reason to hardcode it
+          # in the repo when a secret does the same job with less exposure.
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "::error::VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set as repository secrets (Settings > Secrets and variables > Actions) before this workflow can build."
+            exit 1
+          fi
+          pnpm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web-platform/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

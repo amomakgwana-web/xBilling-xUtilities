@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// Copies every services/*/.env.example and apps/*/.env.example to a sibling
-// .env if one doesn't already exist, so `pnpm dev` works with zero config.
+// Copies every apps/*/.env.example to a sibling .env if one doesn't already
+// exist, so `pnpm dev` works with zero config beyond filling in the two
+// VITE_SUPABASE_* values.
 import { readdirSync, existsSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 
-const roots = ["services", "apps"];
+const roots = ["apps"];
 let copied = 0;
 
 for (const root of roots) {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { T, IC, Card, CH, SectionTitle, Badge, Btn, LiveDot, LoadingState, ErrorState } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
 
 interface AuditEvent {
   id: number;
@@ -30,7 +31,10 @@ export function Audit() {
   const load = () => {
     setLoading(true);
     setError(null);
-    Promise.all([api.get<AuditEvent[]>("/compliance/audit/events?limit=100"), api.get<ChainStatus>("/compliance/audit/verify")])
+    Promise.all([
+      unwrap<AuditEvent[]>(supabase.from("audit_events").select("*").order("id", { ascending: false }).limit(100)),
+      callRpc<ChainStatus>("verify_audit_chain"),
+    ])
       .then(([e, c]) => {
         setEvents(e);
         setChain(c);
@@ -44,7 +48,7 @@ export function Audit() {
   const reverify = async () => {
     setVerifying(true);
     try {
-      setChain(await api.get<ChainStatus>("/compliance/audit/verify"));
+      setChain(await callRpc<ChainStatus>("verify_audit_chain"));
     } finally {
       setVerifying(false);
     }

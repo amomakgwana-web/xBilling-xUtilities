@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { MeterFault } from "@xplatform/shared-types";
 import { T, IC, Card, CH, SectionTitle, Badge, Btn, LoadingState, ErrorState } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
 
 export function Faults() {
   const [faults, setFaults] = useState<MeterFault[]>([]);
@@ -11,8 +12,7 @@ export function Faults() {
   const load = () => {
     setLoading(true);
     setError(null);
-    return api
-      .get<MeterFault[]>("/metering/faults")
+    return unwrap<MeterFault[]>(supabase.from("meter_faults").select("*"))
       .then(setFaults)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load faults"))
       .finally(() => setLoading(false));
@@ -23,12 +23,12 @@ export function Faults() {
   }, []);
 
   const dispatch = async (id: string) => {
-    await api.post(`/metering/faults/${id}/dispatch`);
+    await callRpc("dispatch_fault", { p_id: id });
     setFaults((prev) => prev.map((f) => (f.id === id ? { ...f, status: "dispatched" } : f)));
   };
 
   const resolve = async (id: string) => {
-    await api.post(`/metering/faults/${id}/resolve`);
+    await callRpc("resolve_fault", { p_id: id });
     setFaults((prev) => prev.map((f) => (f.id === id ? { ...f, status: "resolved" } : f)));
   };
 

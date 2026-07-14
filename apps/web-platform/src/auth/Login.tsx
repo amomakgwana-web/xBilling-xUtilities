@@ -114,7 +114,7 @@ export function Login() {
         </div>
 
         <p style={{ textAlign: "center", fontSize: 10, color: T.g300, marginTop: 16 }}>
-          Passwords are bcrypt-verified against platform.users by the gateway. Identities are provisioned — no self-signup.
+          Authenticated directly by Supabase Auth. Identities are provisioned — no self-signup.
         </p>
       </div>
     </div>
