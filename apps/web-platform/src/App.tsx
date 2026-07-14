@@ -43,7 +43,8 @@ function Area({ area, children }: { area: keyof typeof AREA_ACCESS; children: Re
 }
 
 function Routed() {
-  const { session } = useAuth();
+  const { session, loading } = useAuth();
+  if (loading) return null;
   return (
     <Routes>
       <Route path="/login" element={session ? <Navigate to={PERSONA_META[session.persona].home} replace /> : <Login />} />

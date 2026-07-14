@@ -1,54 +1,55 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
-import { clearSession, getSession, saveSession, type Persona, type Session } from "./session";
-
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000/api";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { supabase } from "../lib/supabaseClient";
+import { sessionFromJwt, type Session } from "./session";
 
 interface AuthContextValue {
   session: Session | null;
+  /** True until the initial supabase.auth.getSession() call resolves — avoids a login-page flash on reload while a valid session is still being restored. */
+  loading: boolean;
   login: (email: string, password: string) => Promise<Session>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(getSession);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session ? sessionFromJwt(data.session.access_token) : null);
+      setLoading(false);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+      setSession(next ? sessionFromJwt(next.access_token) : null);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
   const login = async (email: string, password: string): Promise<Session> => {
-    // Not via `api` — there is no token yet, and a 401 here must surface as a
-    // form error, not a redirect loop back to /login.
-    const res = await fetch(`${BASE_URL}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const body = (await res.json()) as {
-      ok: boolean;
-      data: {
-        token: string;
-        user: { name: string; email: string; persona: Persona; accountNumber?: string; municipalityId?: string };
-      };
-      error?: { message: string };
-    };
-    if (!body.ok) throw new Error(body.error?.message ?? "Sign-in failed");
-    const next: Session = {
-      token: body.data.token,
-      persona: body.data.user.persona,
-      name: body.data.user.name,
-      accountNumber: body.data.user.accountNumber,
-      municipalityId: body.data.user.municipalityId,
-    };
-    saveSession(next);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
+    const next = data.session ? sessionFromJwt(data.session.access_token) : null;
+    if (!next) {
+      // Either the Custom Access Token Hook isn't enabled in the Supabase
+      // dashboard yet (Authentication -> Hooks), or this identity has no
+      // platform.users row linked via auth_user_id — either way, a token
+      // with no persona claim can't route anywhere in this app.
+      await supabase.auth.signOut();
+      throw new Error("Signed in, but no platform role was found on this account. Is the Custom Access Token Hook enabled?");
+    }
     setSession(next);
     return next;
   };
 
-  const logout = () => {
-    clearSession();
+  const logout = async () => {
+    await supabase.auth.signOut();
     setSession(null);
   };
 
-  return <AuthContext.Provider value={{ session, login, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ session, loading, login, logout }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

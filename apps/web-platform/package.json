@@ -11,6 +11,7 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
     "@xplatform/shared-types": "workspace:*",
     "@xplatform/ui-kit": "workspace:*",
     "pdf-lib": "^1.17.1",
