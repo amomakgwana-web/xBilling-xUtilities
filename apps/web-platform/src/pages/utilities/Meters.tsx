@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Meter } from "@xplatform/shared-types";
 import { T, IC, Card, CH, TRow, SectionTitle, Badge, Btn, LoadingState, ErrorState, fmtN } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
 
 const TYPE_LABEL: Record<Meter["type"], string> = {
   prepaid_electricity: "Prepaid Electricity",
@@ -20,8 +21,7 @@ export function Meters() {
   const load = () => {
     setLoading(true);
     setError(null);
-    api
-      .get<Meter[]>("/metering/meters")
+    unwrap<Meter[]>(supabase.from("meters").select("*"))
       .then(setMeters)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load meters"))
       .finally(() => setLoading(false));
@@ -30,9 +30,9 @@ export function Meters() {
   useEffect(load, []);
 
   const vendToken = async (serial: string) => {
-    const result = await api.post<{ token: string; units: number; ref: string }>("/metering/meters/vend-token", {
-      serial,
-      amount: Number(vendAmount),
+    const result = await callRpc<{ token: string; units: number; ref: string }>("vend_token", {
+      p_serial: serial,
+      p_amount: Number(vendAmount),
     });
     setTokenResult({ serial, token: result.token, units: result.units });
     setVendingFor(null);

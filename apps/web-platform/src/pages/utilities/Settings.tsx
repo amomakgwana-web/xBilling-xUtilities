@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { T, IC, Card, CH, SectionTitle, Btn, Input, Spin, LoadingState, ErrorState } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
+import { useAuth } from "../../auth/AuthContext";
 
 interface Municipality {
   id: string;
@@ -12,6 +14,7 @@ interface Municipality {
 }
 
 export function Settings() {
+  const { session } = useAuth();
   const [municipality, setMunicipality] = useState<Municipality | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,8 +26,14 @@ export function Settings() {
   const load = () => {
     setLoading(true);
     setError(null);
-    api
-      .get<Municipality[]>("/platform/municipalities")
+    // Unlike the RLS-gated tables, public.municipalities has no per-official
+    // row filter (branding/contact data isn't sensitive) — the "own
+    // municipality" scoping an official sees here is applied client-side,
+    // same as the old gateway route did server-side.
+    const query = session?.municipalityId
+      ? supabase.from("municipalities").select("*").eq("id", session.municipalityId)
+      : supabase.from("municipalities").select("*");
+    unwrap<Municipality[]>(query)
       .then((rows) => {
         const own = rows[0] ?? null;
         setMunicipality(own);
@@ -42,9 +51,9 @@ export function Settings() {
     setSaving(true);
     setSaved(false);
     try {
-      const updated = await api.patch<Municipality>(`/platform/municipalities/${municipality.id}`, {
-        contactEmail: email,
-        contactPhone: phone,
+      const updated = await callRpc<Municipality>("edit_municipality", {
+        p_id: municipality.id,
+        p_patch: { contactEmail: email, contactPhone: phone },
       });
       setMunicipality(updated);
       setSaved(true);

@@ -36,3 +36,17 @@ export async function callRpc<T>(fn: string, args?: Record<string, unknown>): Pr
   if (error) throw new Error(error.message);
   return camelizeKeys<T>(data);
 }
+
+interface EdgeEnvelope<T> {
+  ok: boolean;
+  data: T;
+  error?: { code: string; message: string };
+}
+
+/** Invokes one of the two supabase/functions/* Edge Functions (ai-insight, campaign-send). */
+export async function callEdgeFunction<T>(fn: string, body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke<EdgeEnvelope<T>>(fn, { body });
+  if (error) throw new Error(error.message);
+  if (!data?.ok) throw new Error(data?.error?.message ?? `${fn} failed`);
+  return data.data;
+}

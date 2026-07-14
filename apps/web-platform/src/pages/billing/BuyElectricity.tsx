@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Meter } from "@xplatform/shared-types";
 import { T, IC, Card, CH, SectionTitle, Badge, Btn, Spin, LoadingState, ErrorState, fmtN, fmtR } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
 import { useAccount } from "../../AccountContext";
 
 const AMOUNTS = [50, 100, 200, 500];
@@ -28,9 +29,8 @@ export function BuyElectricity() {
   const load = () => {
     setLoading(true);
     setError(null);
-    api
-      .get<Meter[]>("/metering/meters")
-      .then((all) => setMeters(all.filter((m) => m.accountNumber === accountNumber && m.type === "prepaid_electricity")))
+    unwrap<Meter[]>(supabase.from("meters").select("*").eq("accountNumber", accountNumber).eq("type", "prepaid_electricity"))
+      .then(setMeters)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load your meters"))
       .finally(() => setLoading(false));
   };
@@ -43,9 +43,9 @@ export function BuyElectricity() {
     setVending(true);
     setVendError(null);
     try {
-      const result = await api.post<{ token: string; units: number; ref: string }>("/metering/meters/vend-token", {
-        serial,
-        amount: effectiveAmount,
+      const result = await callRpc<{ token: string; units: number; ref: string }>("vend_token", {
+        p_serial: serial,
+        p_amount: effectiveAmount,
       });
       setHistory((prev) => [
         { serial, token: result.token, units: result.units, amount: effectiveAmount, at: new Date().toLocaleTimeString() },

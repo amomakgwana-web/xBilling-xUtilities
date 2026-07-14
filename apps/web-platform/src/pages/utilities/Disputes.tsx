@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Dispute } from "@xplatform/shared-types";
 import { T, IC, Card, CH, KpiCard, SectionTitle, Badge, Btn, Input, LoadingState, ErrorState } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
 
 export function Disputes() {
   const [disputes, setDisputes] = useState<Dispute[]>([]);
@@ -13,8 +14,7 @@ export function Disputes() {
   const load = () => {
     setLoading(true);
     setError(null);
-    api
-      .get<Dispute[]>("/billing/disputes")
+    unwrap<Dispute[]>(supabase.from("disputes").select("*").order("createdAt", { ascending: false }))
       .then(setDisputes)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load disputes"))
       .finally(() => setLoading(false));
@@ -28,7 +28,7 @@ export function Disputes() {
     setResolving(id);
     setError(null);
     try {
-      const updated = await api.post<Dispute>(`/billing/disputes/${id}/resolve`, { status, resolutionNote });
+      const updated = await callRpc<Dispute>("resolve_dispute", { p_id: id, p_status: status, p_resolution_note: resolutionNote });
       setDisputes((prev) => prev.map((d) => (d.id === id ? updated : d)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to resolve dispute");

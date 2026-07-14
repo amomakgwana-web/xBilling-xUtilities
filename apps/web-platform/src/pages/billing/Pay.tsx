@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import type { Account, PaymentMethod, PaymentTransaction } from "@xplatform/shared-types";
 import { T, IC, Card, CH, SectionTitle, Badge, Btn, Input, Sel, Spin, LoadingState, ErrorState, fmtR } from "@xplatform/ui-kit";
-import { api } from "../../api";
-import { useAccount, DEMO_ACCOUNTS } from "../../AccountContext";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
+import { useAccount } from "../../AccountContext";
 
 export function Pay() {
   const { accountNumber } = useAccount();
@@ -19,7 +20,10 @@ export function Pay() {
     setLoading(true);
     setLoadError(null);
     setResult(null);
-    Promise.all([api.get<Account>(`/billing/accounts/${accountNumber}`), api.get<PaymentMethod[]>("/payments/methods")])
+    Promise.all([
+      unwrap<Account>(supabase.from("accounts").select("*").eq("accountNumber", accountNumber).single()),
+      unwrap<PaymentMethod[]>(supabase.from("payment_methods").select("*")),
+    ])
       .then(([acc, m]) => {
         setAccount(acc);
         setMethods(m);
@@ -34,13 +38,11 @@ export function Pay() {
   const submit = async () => {
     setSubmitting(true);
     setResult(null);
-    const consumerName = DEMO_ACCOUNTS.find((a) => a.accountNumber === accountNumber)?.name ?? "Consumer";
     try {
-      const tx = await api.post<PaymentTransaction>("/payments/initiate", {
-        accountNumber,
-        amount: Number(amount),
-        method,
-        consumerName,
+      const tx = await callRpc<PaymentTransaction>("initiate_payment", {
+        p_account_number: accountNumber,
+        p_amount: Number(amount),
+        p_method: method,
       });
       setResult(tx);
     } catch (err) {

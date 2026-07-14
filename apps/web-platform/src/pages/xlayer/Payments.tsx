@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { DebiCheckMandate, PaymentMethod, PaymentPlan, PaymentTransaction } from "@xplatform/shared-types";
 import { T, IC, Card, CH, Tab, TRow, SectionTitle, Badge, Btn, LoadingState, ErrorState, fmtN, fmtR } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
 
 export function Payments() {
   const [tab, setTab] = useState("methods");
@@ -16,10 +17,10 @@ export function Payments() {
     setLoading(true);
     setError(null);
     Promise.all([
-      api.get<PaymentMethod[]>("/payments/methods"),
-      api.get<PaymentTransaction[]>("/payments/recon"),
-      api.get<DebiCheckMandate[]>("/payments/debicheck/mandates"),
-      api.get<PaymentPlan[]>("/payments/plans"),
+      unwrap<PaymentMethod[]>(supabase.from("payment_methods").select("*")),
+      unwrap<PaymentTransaction[]>(supabase.from("transactions").select("*").order("createdAt", { ascending: false })),
+      unwrap<DebiCheckMandate[]>(supabase.from("debicheck_mandates").select("*")),
+      unwrap<PaymentPlan[]>(supabase.from("payment_plans").select("*").order("createdAt", { ascending: false })),
     ])
       .then(([m, r, d, p]) => {
         setMethods(m);
@@ -34,7 +35,7 @@ export function Payments() {
   useEffect(load, []);
 
   const resolve = async (ref: string) => {
-    await api.post(`/payments/recon/${ref}/resolve`);
+    await callRpc("resolve_recon", { p_ref: ref });
     setRecon((prev) => prev.map((r) => (r.ref === ref ? { ...r, status: "matched", erpStatus: "posted" } : r)));
   };
 

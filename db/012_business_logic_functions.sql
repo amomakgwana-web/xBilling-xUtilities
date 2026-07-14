@@ -334,7 +334,7 @@ create or replace function public.upsert_banking_details(
   p_account_number text, p_bank_name text, p_account_holder text, p_branch_code text,
   p_account_type text, p_debit_day integer, p_bank_account_number text default null
 )
-returns billing.banking_details
+returns jsonb
 language plpgsql
 security definer
 set search_path = billing, pg_catalog, pg_temp
@@ -371,7 +371,19 @@ begin
   returning * into v_row;
 
   perform public._append_audit_event('PUT /billing/banking/:accountNumber', p_account_number);
-  return v_row;
+  -- Mirrors public.banking_details (db/014): the raw bank account number
+  -- is never returned, even to the account owner who just supplied it —
+  -- same defense-in-depth the old Express route applied in every response.
+  return jsonb_build_object(
+    'accountNumber', p_account_number,
+    'bankName', v_row.bank_name,
+    'accountHolder', v_row.account_holder,
+    'maskedAccountNumber', '••••' || right(v_row.account_number, 4),
+    'branchCode', v_row.branch_code,
+    'accountType', v_row.account_type,
+    'debitDay', v_row.debit_day,
+    'updatedAt', v_row.updated_at
+  );
 end;
 $$;
 revoke execute on function public.upsert_banking_details(text, text, text, text, text, integer, text) from public;
@@ -954,7 +966,7 @@ revoke execute on function public.create_api_key(text) from public;
 
 -- Direct port of services/gateway/src/apiKeys.ts revokeApiKey().
 create or replace function public.revoke_api_key(p_id text)
-returns platform.api_keys
+returns jsonb
 language plpgsql
 security definer
 set search_path = platform, pg_catalog, pg_temp
@@ -970,7 +982,12 @@ begin
     raise exception 'API key not found' using errcode = 'P0002';
   end if;
   perform public._append_audit_event('POST /platform/api-keys/:id/revoke', p_id);
-  return v_row;
+  -- Mirrors public.api_keys (db/014): key_hash never leaves the database,
+  -- same as every other read/write path for this table.
+  return jsonb_build_object(
+    'id', v_row.id, 'name', v_row.name, 'keyPrefix', v_row.key_prefix,
+    'createdBy', v_row.created_by, 'createdAt', v_row.created_at, 'revokedAt', v_row.revoked_at
+  );
 end;
 $$;
 revoke execute on function public.revoke_api_key(text) from public;

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Account, PaymentTransaction } from "@xplatform/shared-types";
 import { T, IC, Card, CH, KpiCard, SectionTitle, LoadingState, ErrorState, fmtR, fmtN } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap } from "../../lib/db";
 
 function HBar({ label, value, max, accent, format }: { label: string; value: number; max: number; accent: string; format: (v: number) => string }) {
   const pct = max > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0;
@@ -42,7 +43,7 @@ export function Analytics() {
   const load = () => {
     setLoading(true);
     setError(null);
-    Promise.all([api.get<Account[]>("/billing/accounts"), api.get<PaymentTransaction[]>("/payments/recon")])
+    Promise.all([unwrap<Account[]>(supabase.from("accounts").select("*")), unwrap<PaymentTransaction[]>(supabase.from("transactions").select("*"))])
       .then(([acc, tx]) => {
         setAccounts(acc);
         setTransactions(tx);

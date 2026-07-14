@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import type { Account, Invoice } from "@xplatform/shared-types";
 import { T, IC, Card, CH, SectionTitle, Badge, Btn, Spin, LoadingState, ErrorState, fmtR } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap } from "../../lib/db";
 import { useAccount } from "../../AccountContext";
 import { downloadInvoicePdf } from "../../pdf";
+
+type InvoiceLineRow = Invoice["lines"][number] & { invoiceId: string };
 
 export function Invoices() {
   const { accountNumber } = useAccount();
@@ -17,10 +20,25 @@ export function Invoices() {
   const load = () => {
     setLoading(true);
     setError(null);
-    Promise.all([api.get<Account>(`/billing/accounts/${accountNumber}`), api.get<Invoice[]>(`/billing/invoices?accountNumber=${accountNumber}`)])
-      .then(([acc, inv]) => {
+    Promise.all([
+      unwrap<Account>(supabase.from("accounts").select("*").eq("accountNumber", accountNumber).single()),
+      unwrap<Omit<Invoice, "lines">[]>(
+        supabase.from("invoices").select("*").eq("accountNumber", accountNumber).order("issueDate", { ascending: false }),
+      ),
+    ])
+      .then(async ([acc, inv]) => {
         setAccount(acc);
-        setInvoices(inv);
+        if (inv.length === 0) {
+          setInvoices([]);
+          return;
+        }
+        // The public.* views (db/014) have no PostgREST-visible foreign
+        // keys to embed through, so line items are fetched separately and
+        // grouped client-side.
+        const lines = await unwrap<InvoiceLineRow[]>(
+          supabase.from("invoice_lines").select("*").in("invoiceId", inv.map((i) => i.id)),
+        );
+        setInvoices(inv.map((i) => ({ ...i, lines: lines.filter((l) => l.invoiceId === i.id) })));
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load invoices"))
       .finally(() => setLoading(false));

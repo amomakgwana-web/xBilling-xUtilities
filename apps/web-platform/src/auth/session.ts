@@ -40,7 +40,7 @@ export function sessionFromJwt(accessToken: string): Session | null {
   const parts = accessToken.split(".");
   if (parts.length !== 3) return null;
   try {
-    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = parts[1]!.replace(/-/g, "+").replace(/_/g, "/");
     const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
     const claims = JSON.parse(atob(padded)) as Record<string, unknown>;
     const persona = claims.persona as Persona | undefined;

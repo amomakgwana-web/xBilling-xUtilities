@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Tariff } from "@xplatform/shared-types";
 import { T, IC, Card, CH, SectionTitle, Badge, Btn, Input, Sel, Spin, TRow, LoadingState, ErrorState, fmtR } from "@xplatform/ui-kit";
-import { api } from "../../api";
+import { supabase } from "../../lib/supabaseClient";
+import { unwrap, callRpc } from "../../lib/db";
 
 const KNOWN_CODES = ["RES-STD", "RES-PREM", "COM-STD"];
 
@@ -28,8 +29,7 @@ export function Tariffs() {
   const load = () => {
     setLoading(true);
     setError(null);
-    api
-      .get<Tariff[]>("/billing/tariffs")
+    unwrap<Tariff[]>(supabase.from("tariffs").select("*").order("validFrom", { ascending: false }))
       .then(setTariffs)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load tariffs"))
       .finally(() => setLoading(false));
@@ -67,15 +67,15 @@ export function Tariffs() {
     setSaving(true);
     setError(null);
     try {
-      const tariff = await api.post<Tariff>("/billing/tariffs", {
-        code: draft.code,
-        description: draft.description,
-        electricityPerKwh: Number(draft.electricityPerKwh),
-        waterPerKl: Number(draft.waterPerKl),
-        refuseMonthly: Number(draft.refuseMonthly),
-        sewerMonthly: Number(draft.sewerMonthly),
-        vatRate: Number(draft.vatRate),
-        validFrom: draft.validFrom,
+      const tariff = await callRpc<Tariff>("create_tariff", {
+        p_code: draft.code,
+        p_description: draft.description,
+        p_electricity_per_kwh: Number(draft.electricityPerKwh),
+        p_water_per_kl: Number(draft.waterPerKl),
+        p_refuse_monthly: Number(draft.refuseMonthly),
+        p_sewer_monthly: Number(draft.sewerMonthly),
+        p_vat_rate: Number(draft.vatRate),
+        p_valid_from: draft.validFrom,
       });
       setTariffs((prev) => [tariff, ...prev]);
       setDraft(emptyDraft());
